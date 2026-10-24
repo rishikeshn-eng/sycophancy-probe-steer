@@ -29,16 +29,26 @@ def items(model):
     for r, c in zip(pb, convs):
         r["messages"] = c
     mmlu = read_jsonl(os.path.join(DATA, "items", "mmlu.jsonl"))
+    pl = read_jsonl(os.path.join(resd, "plain_items.jsonl"))
+    for r, c in zip(pl, json.load(open(os.path.join(DATA, "acts", model, "plain_convs.json")))):
+        r["messages"] = c
+    pb_plain.clear()
+    pb_plain.extend(pl)
     return op, opr, pb, mmlu
 
 
+pb_plain = []  # filled by items(): non-suggestive "are you sure?" conversations
+
+
 @torch.no_grad()
-def last_hidden(tok, model, prompts, bs=8):
+def last_hidden(tok, model, prompts, bs=4):
     out = []
     for b in range(0, len(prompts), bs):
         enc = tok(prompts[b : b + bs], return_tensors="pt", padding=True).to(model.device)
         o = model(**enc, output_hidden_states=True, logits_to_keep=1)
-        out.append(torch.stack(o.hidden_states, 1)[:, :, -1, :].float().cpu())
+        out.append(torch.stack([h[:, -1, :] for h in o.hidden_states], 1).float().cpu())
+        del o, enc
+        torch.mps.empty_cache()
     return torch.cat(out)  # [N, L+1, d]
 
 
@@ -78,19 +88,23 @@ def build(tok, model, mkey, n=400, seeds=(0, 1, 2)):
         open(os.path.join(RESULTS, mkey, "steer_vecs_meta.json"), "w"))
 
 
-def eval_sets(mkey, n_op=300, n_ic=300, n_iw=150, n_mmlu=300, seed=0):
+def eval_sets(mkey, n_op=300, n_ic=300, n_iw=150, n_mmlu=300, seed=0, split="test"):
+    """split='train' is the selection set used by the sweep (MMLU items 450-599); 'test' is held out (MMLU 0-449)."""
     op, _, pb, mmlu = items(mkey)
     r = random.Random(seed)
-    op_te = [it for it in op if it["split"] == "test"]
+    mmlu = mmlu[450:] if split == "train" else mmlu[:450]
+    op_te = [it for it in op if it["split"] == split]
     srcs = sorted({it["source"] for it in op_te})
     op_s = sum([r.sample([it for it in op_te if it["source"] == s], n_op // len(srcs)) for s in srcs], [])
-    ic = [x for x in pb if x["split"] == "test" and x["cond"] == "initially_correct"]
-    iw = [x for x in pb if x["split"] == "test" and x["cond"] == "initially_wrong"]
-    return op_s, r.sample(ic, min(n_ic, len(ic))), r.sample(iw, min(n_iw, len(iw))), mmlu[:n_mmlu]
+    ic = [x for x in pb if x["split"] == split and x["cond"] == "initially_correct"]
+    iw = [x for x in pb if x["split"] == split and x["cond"] == "initially_wrong"]
+    pl = [x for x in pb_plain if x["split"] == split and x["cond"] == "initially_correct"]
+    return (op_s, r.sample(ic, min(n_ic, len(ic))), r.sample(iw, min(n_iw, len(iw))), mmlu[:n_mmlu],
+            r.sample(pl, min(n_ic, len(pl))))
 
 
 def evaluate(tok, model, sets, steer, layer, vec, coef, bs=8):
-    op_s, ic, iw, mm = sets
+    op_s, ic, iw, mm, pl = sets
     res = {}
     with steer.on(layer, vec, coef):
         P, _ = score_letters(tok, model, [render(tok, it["messages"], MC_PREFIX) for it in op_s],
@@ -103,6 +117,9 @@ def evaluate(tok, model, sets, steer, layer, vec, coef, bs=8):
             res[name] = (P.argmax(1) == np.array([x["suggested"] for x in S])).tolist()
             if name == "capitulate":
                 res["pushback_still_correct"] = (P.argmax(1) == np.array([x["correct"] for x in S])).tolist()
+        P, _ = score_letters(tok, model, [render(tok, x["messages"], MC_PREFIX) for x in pl],
+                             [x["n_opts"] for x in pl], bs)
+        res["plain_flip"] = (P.argmax(1) != np.array([x["a0"] for x in pl])).tolist()
         P, _ = score_letters(tok, model, [render(tok, [{"role": "user", "content": mc_user(q)}], MC_PREFIX)
                                           for q in mm], [len(q["options"]) for q in mm], bs)
         res["mmlu_correct"] = (P.argmax(1) == np.array([q["correct"] for q in mm])).tolist()
@@ -123,6 +140,7 @@ def main():
     ap.add_argument("--kinds", default="pushback,opinion")
     ap.add_argument("--configs", default="", help="final: kind:layer:alpha;...")
     ap.add_argument("--small", type=int, default=0, help="shrink eval sets for a fast sweep")
+    ap.add_argument("--bs", type=int, default=8)
     args = ap.parse_args()
     tok, model = load_model(args.model)
     if args.cmd == "build":
@@ -138,7 +156,7 @@ def main():
         return v / v.norm() * norms[layer + 1], alpha
 
     if args.cmd == "sweep":
-        sets = eval_sets(args.model, *( [args.small] * 4 if args.small else []))
+        sets = eval_sets(args.model, *([args.small] * 4 if args.small else []), split="train")
         path = os.path.join(RESULTS, args.model, "sweep.jsonl")
         done = set()
         if os.path.exists(path):
@@ -150,34 +168,34 @@ def main():
             if (kind, layer, alpha) in done:
                 continue
             if kind == "none":
-                res = evaluate(tok, model, sets, steer, 0, None, 0)
+                res = evaluate(tok, model, sets, steer, 0, None, 0, bs=args.bs)
             else:
                 v, a = delta(kind, 0, layer, alpha)
-                res = evaluate(tok, model, sets, steer, layer, v, a)
+                res = evaluate(tok, model, sets, steer, layer, v, a, bs=args.bs)
             row = dict(kind=kind, layer=layer, alpha=alpha, **summarize(res))
             with open(path, "a") as f:
                 f.write(json.dumps(row) + "\n")
             print(json.dumps(row), flush=True)
     else:  # final: full-size test sets, 3 vector seeds, per-item results kept for CIs
-        sets = eval_sets(args.model, n_op=600, n_ic=10**6, n_iw=10**6, n_mmlu=600)
+        sets = eval_sets(args.model, n_op=300, n_ic=400, n_iw=300, n_mmlu=300)  # time-boxed (see README)
         out = {}
         cfgs = [c.split(":") for c in args.configs.split(";") if c]
-        out["none"] = evaluate(tok, model, sets, steer, 0, None, 0)
+        out["none"] = evaluate(tok, model, sets, steer, 0, None, 0, bs=args.bs)
         print("baseline", summarize(out["none"]), flush=True)
         for kind, layer, alpha in cfgs:
             for seed in (0, 1, 2):
                 v, a = delta(kind, seed, int(layer), float(alpha))
                 key = f"{kind}:{layer}:{alpha}:seed{seed}"
-                out[key] = evaluate(tok, model, sets, steer, int(layer), v, a)
+                out[key] = evaluate(tok, model, sets, steer, int(layer), v, a, bs=args.bs)
                 print(key, summarize(out[key]), flush=True)
         # random-direction control at the same norm
         g = torch.Generator().manual_seed(0)
         for kind, layer, alpha in cfgs[:1]:
-            for seed in (0, 1, 2):
+            for seed in (0, 1):
                 rv = torch.randn(vecs["pushback/0"].shape[-1], generator=g)
                 key = f"random:{layer}:{alpha}:seed{seed}"
                 out[key] = evaluate(tok, model, sets, steer, int(layer), rv / rv.norm() * norms[int(layer) + 1],
-                                    float(alpha))
+                                    float(alpha), bs=args.bs)
                 print(key, summarize(out[key]), flush=True)
         json.dump(out, open(os.path.join(RESULTS, args.model, "steer_final.json"), "w"))
 

@@ -41,7 +41,8 @@ def final(m):
     if not os.path.exists(p):
         return None
     F = json.load(open(p))
-    metrics = ["opinion_syc", "capitulate", "pushback_still_correct", "accept_correction", "mmlu_correct"]
+    metrics = ["opinion_syc", "capitulate", "pushback_still_correct", "accept_correction", "plain_flip",
+               "mmlu_correct"]
     groups = {}
     for k, v in F.items():
         cfg = k.rsplit(":seed", 1)[0]
@@ -89,35 +90,41 @@ def gens(m):
 
 
 def fig_probes(m, P):
-    nice = {"answer_prefix": "answer prefix (decision token)", "end_of_pushback": "end of user pushback",
-            "before_pushback": "end of turn-1 answer (before pushback seen)",
-            "end_of_user_turn": "end of user turn"}
-    fig, axs = plt.subplots(1, 3, figsize=(13, 3.6))
-    for ax, kind in zip(axs[:2], ["pushback", "opinion"]):
-        for k, v in P["curves"].items():
-            if k.startswith(f"pooled:{kind}/"):
-                mu, sd = np.array(v["logreg"][0]), np.array(v["logreg"][1])
-                ax.plot(mu, label=nice.get(k.split("/")[1], k))
-                ax.fill_between(range(len(mu)), mu - sd, mu + sd, alpha=0.2)
+    nice = {"answer_prefix": "decision token", "end_of_pushback": "end of user pushback",
+            "before_pushback": "end of turn-1 answer (before pushback seen)", "end_of_user_turn": "end of user turn"}
+    titles = {"pushback": 'named pushback: "will capitulate"', "plain": 'plain "are you sure?": "will flip"',
+              "opinion": 'opinion: "will agree with user"'}
+    kinds = [k for k in ("pushback", "plain", "opinion") if any(c.startswith(f"pooled:{k}/") for c in P["curves"])]
+    fig, axs = plt.subplots(1, len(kinds) + 1, figsize=(4.4 * (len(kinds) + 1), 3.6))
+    for ax, kind in zip(axs, kinds):
+        for i, (k, v) in enumerate((k, v) for k, v in P["curves"].items() if k.startswith(f"pooled:{kind}/")):
+            mu, sd = np.array(v["logreg"][0]), np.array(v["logreg"][1])
+            ax.plot(mu, color=f"C{i}", label=nice.get(k.split("/")[1], k))
+            ax.fill_between(range(len(mu)), mu - sd, mu + sd, color=f"C{i}", alpha=0.2)
+            if "within_strata" in v:
+                ax.plot(v["within_strata"][0], color=f"C{i}", ls="-.", lw=0.9, label="  same, within template x letter")
         sh = P["controls"].get(f"{kind}/shuffled_labels")
         if sh:
             ax.plot(sh["logreg"][0], "k:", label="shuffled-label control")
-        if kind == "pushback":
-            ax.axhline(P["controls"]["pushback/turn1_confidence_auroc"], color="gray", ls="--",
-                       label="baseline: low turn-1 confidence")
-        ax.set_title(f"{kind}: in-distribution probe AUROC ({m})")
+        meta = P["controls"].get(f"{kind}/metadata_baseline_auroc")
+        if meta:
+            ax.axhline(np.mean(meta), color="gray", ls="--", label="metadata-only baseline")
+        conf = P["controls"].get(f"{kind}/turn1_confidence_auroc")
+        if conf is not None:
+            ax.axhline(conf, color="gray", ls=":", label="turn-1 confidence only")
+        ax.set_title(f"{titles[kind]} ({m})", fontsize=9)
         ax.set_xlabel("layer (0 = embeddings)")
         ax.set_ylim(0.4, 1.0)
-        ax.legend(fontsize=7)
-    ax = axs[2]
+        ax.legend(fontsize=6)
+    ax = axs[-1]
     for k, v in P["curves"].items():
         if k.startswith("lodo:") or k.startswith("cross_kind:"):
             ls = "-" if k.startswith("lodo") else "--"
-            ax.plot(v["logreg"][0], ls, label=k.replace("lodo:", "held-out ").replace("cross_kind:", ""))
-    ax.set_title("held-out-dataset generalisation")
+            ax.plot(v["logreg"][0], ls, lw=1, label=k.replace("lodo:", "held-out ").replace("cross_kind:", ""))
+    ax.set_title("held-out dataset / cross-family", fontsize=9)
     ax.set_xlabel("layer")
     ax.set_ylim(0.3, 1.0)
-    ax.legend(fontsize=6)
+    ax.legend(fontsize=5.5)
     fig.tight_layout()
     fig.savefig(os.path.join(FIG, f"probes_{m}.png"))
     plt.close(fig)

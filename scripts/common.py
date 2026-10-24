@@ -10,6 +10,8 @@ import numpy as np
 os.environ.setdefault("PYTORCH_MPS_HIGH_WATERMARK_RATIO", "0.35")
 os.environ.setdefault("PYTORCH_MPS_LOW_WATERMARK_RATIO", "0.3")
 import torch
+
+torch.set_num_threads(4)
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -109,14 +111,12 @@ def score_letters(tok, model, prompts, n_opts, bs=8, want_hidden=False, position
             p = torch.softmax(logits[j, :k], -1).cpu().numpy()
             out_p.append(np.pad(p, (0, len(LETTERS) - k)))
         if want_hidden:
-            hs = torch.stack(o.hidden_states, 1)  # [B, L+1, T, d]
-            T = hs.shape[2]
+            T = o.hidden_states[0].shape[1]
             for j, i in enumerate(idx):
-                if positions is None:
-                    out_h.append(hs[j, :, -1, :].cpu().numpy().astype(np.float16))
-                else:
-                    sel = [T - 1 - off for off in positions[i]]
-                    out_h.append(hs[j, :, sel, :].permute(1, 0, 2).cpu().numpy().astype(np.float16))
+                sel = [T - 1] if positions is None else [T - 1 - off for off in positions[i]]
+                h = torch.stack([hl[j, sel, :] for hl in o.hidden_states], 1)  # [n_pos, L+1, d]
+                h = h.cpu().numpy().astype(np.float16)
+                out_h.append(h[0] if positions is None else h)
         del o, enc
         if (b // bs) % 4 == 0:
             torch.mps.empty_cache()

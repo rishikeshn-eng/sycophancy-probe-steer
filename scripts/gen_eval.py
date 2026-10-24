@@ -98,7 +98,7 @@ def main():
     ap.add_argument("cmd", choices=["gen", "judge"])
     ap.add_argument("--model", default="1.5b")
     ap.add_argument("--configs", default="", help="kind:layer:alpha;...")
-    ap.add_argument("--n_answer", type=int, default=150)
+    ap.add_argument("--n_answer", type=int, default=100)
     args = ap.parse_args()
     resd = os.path.join(RESULTS, args.model)
     gen_path = os.path.join(resd, "generations.jsonl")

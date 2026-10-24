@@ -50,12 +50,13 @@ code{background:var(--code);padding:1px 5px;border-radius:4px;font-size:.88em}
 <div class="controls">Model: <select id="model"></select></div>
 
 <h2>1 · Baseline sycophancy</h2>
-<p class="sub"><b>Opinion sycophancy</b> (Anthropic model-written-evals): the user states a view in a bio, and we check whether the model picks the matching option. <b>Pushback sycophancy</b> (TruthfulQA + are_you_sure MC): the model answers, the user pushes back and names a specific other option, and we check whether the model switches to the user's answer. When the model was right, switching is capitulation. When it was wrong and the user names the correct option, switching is healthy updating.</p>
+<p class="sub"><b>Opinion sycophancy</b> (Anthropic model-written-evals): the user states a view in a bio, and we check whether the model picks the matching option. <b>Pushback sycophancy</b> (TruthfulQA + are_you_sure MC): the model answers, the user pushes back and names a specific other option, and we check whether the model switches to the user's answer. When the model was right, switching is capitulation. When it was wrong and the user names the correct option, switching is healthy updating. <b>Plain "are you sure?"</b> follows the meg-tong protocol: the user only expresses doubt and names no alternative.</p>
 <div class="card"><table id="baseTable"></table></div>
 
 <h2>2 · Linear probes: can we read "will capitulate" from the residual stream?</h2>
 <p class="sub">Logistic-regression probes on every layer's residual stream, with 5 seeds (mean ± sd shaded). Three read positions: the decision token, the end of the user's pushback, and the end of the model's <i>first</i> answer, before the pushback has been seen. The last is a forward-looking signal of how firmly the model holds its answer.</p>
 <div class="card"><div id="probePush" class="plot"></div></div>
+<div class="card"><div id="probePlain" class="plot"></div></div>
 <div class="card"><div id="probeOp" class="plot"></div></div>
 <p class="sub">Generalisation: leave-one-dataset-out (train on the other sources, test on the held-out one) and cross-kind transfer (opinion ↔ pushback).</p>
 <div class="card"><div id="probeGen" class="plot"></div></div>
@@ -66,6 +67,7 @@ code{background:var(--code);padding:1px 5px;border-radius:4px;font-size:.88em}
 <option value="capitulate">capitulation to wrong pushback</option>
 <option value="opinion_syc">opinion sycophancy</option>
 <option value="accept_correction">accepting a correct correction</option>
+<option value="plain_flip">flip under plain "are you sure?"</option>
 <option value="mmlu_correct">MMLU accuracy</option></select></div>
 <div class="card"><div id="heat" class="plot"></div></div>
 <div class="card"><div id="trade" class="plot"></div></div>
@@ -103,23 +105,24 @@ function render(){M=D[$('model').value];kpis();baseline();probes();
  const cfgs=M.gens?Object.keys(M.gens.examples).filter(c=>!c.startsWith('none')):[];$('cfg').innerHTML=cfgs.map(c=>`<option>${c}</option>`).join('');examples();}
 function kpis(){const b=M.baseline,f=M.final;let h=`<div class="kpi"><b>${pct(b.capitulation_rate.all[0])}</b><span>capitulate when right and the user pushes back (n=${b.capitulation_rate.all[3]})</span></div>`;
  const op=Object.values(b.opinion_syc_rate).map(x=>x[0]);h+=`<div class="kpi"><b>${pct(op.reduce((a,c)=>a+c,0)/op.length)}</b><span>mean opinion-sycophancy rate (3 MWE sets)</span></div>`;
- if(M.probes){const c=M.probes.curves['pooled:pushback/answer_prefix'];if(c){const mx=Math.max(...c.logreg[0]);h+=`<div class="kpi"><b>${mx.toFixed(3)}</b><span>best-layer probe AUROC for "will capitulate"</span></div>`;}
+ if(M.probes){const c=M.probes.curves['pooled:pushback/answer_prefix']||M.probes.curves['pooled:plain/answer_prefix'];if(c){const mx=Math.max(...c.logreg[0]);h+=`<div class="kpi"><b>${mx.toFixed(3)}</b><span>best-layer probe AUROC for "will capitulate"</span></div>`;}
   const c2=M.probes.curves['pooled:pushback/before_pushback'];if(c2){h+=`<div class="kpi"><b>${Math.max(...c2.logreg[0]).toFixed(3)}</b><span>AUROC before the pushback is even seen</span></div>`;}}
  if(f){const keys=Object.keys(f).filter(k=>k!='none'&&!k.startsWith('random'));if(keys.length){const k=keys[0];h+=`<div class="kpi"><b>${pct(f.none.capitulate.mean)} → ${pct(f[k].capitulate.mean)}</b><span>capitulation with steering (${k}); MMLU ${pct(f.none.mmlu_correct.mean)} → ${pct(f[k].mmlu_correct.mean)}</span></div>`;}}
  $('kpis').innerHTML=h;}
-function baseline(){const b=M.baseline;let h='<tr><th>source</th><th>turn-1 accuracy</th><th>capitulation (was right)</th><th>accepts correction (was wrong)</th></tr>';
- for(const s of Object.keys(b.capitulation_rate))h+=`<tr><td>${s}</td><td>${ci(b.turn1_accuracy[s])}</td><td>${ci(b.capitulation_rate[s])} <span class="note">n=${b.capitulation_rate[s][3]}</span></td><td>${ci(b.accept_correction_rate[s])} <span class="note">n=${b.accept_correction_rate[s][3]}</span></td></tr>`;
- h+='<tr><th>opinion set</th><th colspan=3>sycophancy rate (picks user-matching answer)</th></tr>';
- for(const [s,v] of Object.entries(b.opinion_syc_rate))h+=`<tr><td>${s}</td><td colspan=3>${ci(v)}</td></tr>`;$('baseTable').innerHTML=h;}
+function baseline(){const b=M.baseline;let h='<tr><th>source</th><th>turn-1 accuracy</th><th>capitulation (was right)</th><th>accepts correction (was wrong)</th><th>"are you sure?": flips when right</th><th>"are you sure?": fixes when wrong</th></tr>';
+ for(const s of Object.keys(b.capitulation_rate))h+=`<tr><td>${s}</td><td>${ci(b.turn1_accuracy[s])}</td><td>${ci(b.capitulation_rate[s])} <span class="note">n=${b.capitulation_rate[s][3]}</span></td><td>${ci(b.accept_correction_rate[s])} <span class="note">n=${b.accept_correction_rate[s][3]}</span></td><td>${ci(b.plain_flip_when_right[s])}</td><td>${ci(b.plain_fix_when_wrong[s])}</td></tr>`;
+ h+='<tr><th>opinion set</th><th colspan=5>sycophancy rate (picks user-matching answer)</th></tr>';
+ for(const [s,v] of Object.entries(b.opinion_syc_rate))h+=`<tr><td>${s}</td><td colspan=5>${ci(v)}</td></tr>`;$('baseTable').innerHTML=h;}
 function band(name,mu,sd,color,dash){const x=mu.map((_,i)=>i);return[{x,y:mu.map((m,i)=>m+sd[i]),line:{width:0},showlegend:false,hoverinfo:'skip'},
  {x,y:mu.map((m,i)=>m-sd[i]),fill:'tonexty',fillcolor:color+'33',line:{width:0},showlegend:false,hoverinfo:'skip'},{x,y:mu,name,line:{color,dash:dash||'solid'}}]}
 function probes(){const P=M.probes;if(!P){['probePush','probeOp','probeGen'].forEach(i=>$(i).innerHTML='<p class="note">pending</p>');return}
  const nice={answer_prefix:'decision token',end_of_pushback:'end of pushback',before_pushback:'before pushback seen',end_of_user_turn:'end of user turn'};
- for(const [kind,div] of [['pushback','probePush'],['opinion','probeOp']]){let tr=[],i=0;
+ for(const [kind,div] of [['pushback','probePush'],['opinion','probeOp'],['plain','probePlain']]){let tr=[],i=0;
   for(const [k,v] of Object.entries(P.curves))if(k.startsWith(`pooled:${kind}/`))tr.push(...band(nice[k.split('/')[1]],v.logreg[0],v.logreg[1],PALETTE[i++]));
   const sh=P.controls[`${kind}/shuffled_labels`];if(sh)tr.push({y:sh.logreg[0],name:'shuffled labels',line:{color:'#888',dash:'dot'}});
-  if(kind=='pushback'){const n=tr.length?P.curves[`pooled:pushback/answer_prefix`].logreg[0].length:0;tr.push({x:[0,n-1],y:Array(2).fill(P.controls['pushback/turn1_confidence_auroc']),name:'baseline: turn-1 confidence',line:{color:'#888',dash:'dash'}})}
-  Plotly.newPlot(div,tr,layout(`${kind==='pushback'?'"Will capitulate"':'"Will agree with user"'}: in-distribution AUROC by layer`,'layer (0 = embeddings)','AUROC',{yaxis:{range:[0.4,1],title:'AUROC',gridcolor:css('--line')}}),cfgP);}
+  if(P.controls[`${kind}/turn1_confidence_auroc`]!=null&&tr.length){const n=P.curves[`pooled:${kind}/answer_prefix`].logreg[0].length;tr.push({x:[0,n-1],y:Array(2).fill(P.controls[`${kind}/turn1_confidence_auroc`]),name:'baseline: turn-1 confidence',line:{color:'#888',dash:'dash'}})}
+  if(!tr.length){$(div).innerHTML=`<p class="note">${kind}: too little label variance for a probe on this model</p>`;continue}
+  Plotly.newPlot(div,tr,layout(`${{pushback:'"Will capitulate to the suggested answer"',plain:'"Will flip under plain are-you-sure"',opinion:'"Will agree with the user\'s view"'}[kind]}: in-distribution AUROC by layer`,'layer (0 = embeddings)','AUROC',{yaxis:{range:[0.4,1],title:'AUROC',gridcolor:css('--line')}}),cfgP);}
  let tr=[],i=0;for(const [k,v] of Object.entries(P.curves))if(k.startsWith('lodo:')||k.startsWith('cross_kind:'))tr.push({y:v.logreg[0],name:k.replace('lodo:','held-out ').replace('cross_kind:',''),line:{color:PALETTE[i++%8],dash:k.startsWith('cross')?'dash':'solid'}});
  Plotly.newPlot('probeGen',tr,layout('Held-out-dataset generalisation (decision token)','layer','AUROC',{yaxis:{range:[0.3,1],title:'AUROC',gridcolor:css('--line')}}),cfgP);}
 function sweep(){const S=M.sweep||[];if(!S.length){$('heat').innerHTML=$('trade').innerHTML='<p class="note">pending</p>';return}
@@ -133,7 +136,7 @@ function sweep(){const S=M.sweep||[];if(!S.length){$('heat').innerHTML=$('trade'
   text:rr.map(r=>`layer ${r.layer}, α ${r.alpha}<br>capitulate ${pct(r.capitulate)}<br>opinion syc ${pct(r.opinion_syc)}<br>accept corr ${pct(r.accept_correction)}`),hoverinfo:'text',marker:{color:PALETTE[i],size:7}}}),
   layout('Trade-off: sycophancy reduction vs capability (each point = layer × α)','reduction in capitulation rate (abs.)','MMLU accuracy',{shapes:[{type:'line',xref:'paper',x0:0,x1:1,y0:base.mmlu_correct,y1:base.mmlu_correct,line:{dash:'dot',color:'#888'}}]}),cfgP);}
 function finals(){const F=M.final;if(!F){$('finalTable').innerHTML='<tr><td class="note">pending</td></tr>';}else{
- const cols=[['capitulate','capitulation ↓'],['pushback_still_correct','still correct after pushback ↑'],['accept_correction','accepts correct correction ↑'],['opinion_syc','opinion sycophancy ↓'],['mmlu_correct','MMLU ↑']];
+ const cols=[['capitulate','capitulation ↓'],['pushback_still_correct','still correct after pushback ↑'],['accept_correction','accepts correct correction ↑'],['plain_flip','flips under "are you sure?" ↓'],['opinion_syc','opinion sycophancy ↓'],['mmlu_correct','MMLU ↑']];
  let h='<tr><th>config</th>'+cols.map(c=>`<th>${c[1]}</th>`).join('')+'</tr>';
  for(const [k,v] of Object.entries(F))h+=`<tr><td>${k}</td>`+cols.map(c=>`<td>${pct(v[c[0]].mean)} <span class="note">[${pct(v[c[0]].lo)}, ${pct(v[c[0]].hi)}]</span></td>`).join('')+'</tr>';$('finalTable').innerHTML=h;}
  const G=M.gens;if(!G){$('genTable').innerHTML='';return}
