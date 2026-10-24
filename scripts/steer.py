@@ -133,7 +133,7 @@ def summarize(res):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["build", "sweep", "final"])
+    ap.add_argument("cmd", choices=["build", "sweep", "final", "random"])
     ap.add_argument("--model", default="1.5b")
     ap.add_argument("--layers", default="")
     ap.add_argument("--alphas", default="-0.4,-0.2,-0.1,0.1")
@@ -176,6 +176,19 @@ def main():
             with open(path, "a") as f:
                 f.write(json.dumps(row) + "\n")
             print(json.dumps(row), flush=True)
+    elif args.cmd == "random":  # extra layer-matched random-direction controls, appended to steer_final.json
+        sets = eval_sets(args.model, n_op=300, n_ic=400, n_iw=300, n_mmlu=300)
+        path = os.path.join(RESULTS, args.model, "steer_final.json")
+        out = json.load(open(path))
+        g = torch.Generator().manual_seed(1)
+        for kind, layer, alpha in [c.split(":") for c in args.configs.split(";") if c]:
+            for seed in (0, 1):
+                rv = torch.randn(vecs["pushback/0"].shape[-1], generator=g)
+                key = f"random:{layer}:{alpha}:seed{seed}"
+                out[key] = evaluate(tok, model, sets, steer, int(layer), rv / rv.norm() * norms[int(layer) + 1],
+                                    float(alpha), bs=args.bs)
+                print(key, summarize(out[key]), flush=True)
+                json.dump(out, open(path, "w"))
     else:  # final: full-size test sets, 3 vector seeds, per-item results kept for CIs
         sets = eval_sets(args.model, n_op=300, n_ic=400, n_iw=300, n_mmlu=300)  # time-boxed (see README)
         out = {}

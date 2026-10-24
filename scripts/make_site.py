@@ -186,5 +186,87 @@ def main():
     print("wrote docs/data.json", {m: [k for k, v in d.items() if v] for m, d in data.items()})
 
 
+
+
+def pct(x):
+    return "–" if x is None else f"{100 * x:.1f}%"
+
+
+def ci(t):
+    return "–" if not t else f"{pct(t[0])} [{pct(t[1])}, {pct(t[2])}]"
+
+
+def tables(data):
+    """Markdown tables for the README (written between the AUTO markers)."""
+    out = []
+    out.append("| model | opinion syc. (NLP / PhilPapers / political) | capitulates to named wrong answer | accepts named correct answer | flips when right under plain \"are you sure?\" | fixes when wrong under plain \"are you sure?\" |")
+    out.append("|---|---|---|---|---|---|")
+    for m, d in data.items():
+        b = d["baseline"]
+        op = " / ".join(pct(b["opinion_syc_rate"][s][0]) for s in ("nlp", "philpapers", "political"))
+        out.append(f"| Qwen2.5-{m.upper()}-Instruct | {op} | {ci(b['capitulation_rate']['all'])} | "
+                   f"{ci(b['accept_correction_rate']['all'])} | {ci(b['plain_flip_when_right']['all'])} | "
+                   f"{ci(b['plain_fix_when_wrong']['all'])} |")
+    out.append("")
+    out.append("**Probes** (best layer; mean of 5 seeds; the decision-token probe partly reads the answer about to be produced, so the earlier positions are the more meaningful ones):")
+    out.append("")
+    out.append("| model | behaviour | read position | best layer | AUROC | AUROC within template x answer-letter | metadata-only baseline | turn-1 confidence only |")
+    out.append("|---|---|---|---|---|---|---|---|")
+    for m, d in data.items():
+        P = d.get("probes")
+        if not P:
+            continue
+        for k, v in P["curves"].items():
+            if not k.startswith("pooled:"):
+                continue
+            kind, pos = k[7:].split("/")
+            mu = np.array(v["logreg"][0])
+            b = int(mu.argmax())
+            ws = v.get("within_strata")
+            meta = P["controls"].get(f"{kind}/metadata_baseline_auroc")
+            conf = P["controls"].get(f"{kind}/turn1_confidence_auroc")
+            out.append(f"| {m} | {kind} | {pos} | {b} | {mu[b]:.3f} ± {v['logreg'][1][b]:.3f} | "
+                       f"{ws[0][b]:.3f} | {np.mean(meta) if meta else float('nan'):.3f} | "
+                       f"{'–' if conf is None else f'{conf:.3f}'} |")
+    out.append("")
+    out.append("**Steering, held-out test split** (pooled over 3 vector seeds; 95% bootstrap CI over items; random = random direction with the same norm):")
+    out.append("")
+    out.append("| model | config (vector:layer:alpha) | capitulates to wrong | accepts correct | discrimination (accept − capitulate) | plain flip | opinion syc. | MMLU |")
+    out.append("|---|---|---|---|---|---|---|---|")
+    for m, d in data.items():
+        F = d.get("final")
+        if not F:
+            continue
+        for cfg, v in F.items():
+            disc = v["accept_correction"]["mean"] - v["capitulate"]["mean"]
+            cell = lambda k: f"{pct(v[k]['mean'])} [{pct(v[k]['lo'])}, {pct(v[k]['hi'])}]"
+            out.append(f"| {m} | {cfg} | {cell('capitulate')} | {cell('accept_correction')} | {100 * disc:+.1f} pts | "
+                       f"{cell('plain_flip')} | {cell('opinion_syc')} | {cell('mmlu_correct')} |")
+    out.append("")
+    out.append("**Free-form generation checks** (TriviaQA answer sycophancy, 100 questions; coherence 1-5 on 30 open prompts judged by Gemini):")
+    out.append("")
+    out.append("| model | config | accuracy, no hint | accuracy with wrong hint | repeats the wrong hint | coherence | refusals |")
+    out.append("|---|---|---|---|---|---|---|")
+    for m, d in data.items():
+        G = d.get("gens")
+        if not G:
+            continue
+        for cfg, s in G["summary"].items():
+            coh = f"{s['coherence'][0]:.2f} [{s['coherence'][1]:.2f}, {s['coherence'][2]:.2f}]" if s["coherence"] else "–"
+            out.append(f"| {m} | {cfg} | {ci(s['answer_acc_plain'])} | {ci(s['answer_acc_wrong_hint'])} | "
+                       f"{ci(s['says_wrong_wrong_hint'])} | {coh} | {pct(s['refusal'])} |")
+    return "\n".join(out)
+
+
+def write_readme_tables(data):
+    p = os.path.join(ROOT, "README.md")
+    s = open(p).read()
+    a, b = "<!-- AUTO:START -->", "<!-- AUTO:END -->"
+    if a in s and b in s:
+        s = s[: s.index(a) + len(a)] + "\n" + tables(data) + "\n" + s[s.index(b):]
+        open(p, "w").write(s)
+
+
 if __name__ == "__main__":
     main()
+    write_readme_tables(json.load(open(os.path.join(DOCS, "data.json"))))

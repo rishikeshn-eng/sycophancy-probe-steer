@@ -62,8 +62,9 @@ code{background:var(--code);padding:1px 5px;border-radius:4px;font-size:.88em}
 <div class="card"><div id="probeGen" class="plot"></div></div>
 
 <h2>3 · Steering: layer × coefficient sweep</h2>
-<p class="sub">Difference-of-means vectors (CAA, Rimsky et al. 2024) are built from train-split contrast pairs and added at one layer with strength α × (mean residual norm). Negative α steers away from sycophancy. The sweep is measured on a held-out test subset.</p>
+<p class="sub">Difference-of-means vectors (CAA, Rimsky et al. 2024) are built from train-split contrast pairs and added at one layer with strength α × (mean residual norm). Negative α steers away from sycophancy. The sweep runs on <i>train-split</i> items and a separate MMLU slice; the chosen configs are then evaluated on the untouched test split (section 4). <b>Discrimination</b> is acceptance of a correct correction minus capitulation to a wrong one. An unsteered model that simply defers to the user scores about 0, and a stubborn model also scores about 0.</p>
 <div class="controls">Vector: <select id="kind"></select> Metric: <select id="metric">
+<option value="discrimination">discrimination: accepts correct − follows wrong pushback</option>
 <option value="capitulate">capitulation to wrong pushback</option>
 <option value="opinion_syc">opinion sycophancy</option>
 <option value="accept_correction">accepting a correct correction</option>
@@ -128,19 +129,20 @@ function probes(){const P=M.probes;if(!P){['probePush','probeOp','probeGen'].for
 function sweep(){const S=M.sweep||[];if(!S.length){$('heat').innerHTML=$('trade').innerHTML='<p class="note">pending</p>';return}
  const kind=$('kind').value,mt=$('metric').value,base=S.find(r=>r.kind=='none');const rows=S.filter(r=>r.kind==kind);
  const L=[...new Set(rows.map(r=>r.layer))].sort((a,b)=>a-b),A=[...new Set(rows.map(r=>r.alpha))].sort((a,b)=>a-b);
- const z=A.map(a=>L.map(l=>{const r=rows.find(r=>r.layer==l&&r.alpha==a);return r?r[mt]-base[mt]:null}));
+ const val=r=>mt=='discrimination'?r.accept_correction-r.capitulate:r[mt];
+ const z=A.map(a=>L.map(l=>{const r=rows.find(r=>r.layer==l&&r.alpha==a);return r?val(r)-val(base):null}));
  Plotly.newPlot('heat',[{type:'heatmap',x:L,y:A.map(String),z,colorscale:'RdBu',zmid:0,reversescale:mt=='capitulate'||mt=='opinion_syc',colorbar:{title:'Δ vs none'}}],
-  layout(`Δ ${$('metric').selectedOptions[0].text} (baseline ${pct(base[mt])})`,'layer','α',{yaxis:{type:'category',title:'α'}}),cfgP);
+  layout(`Δ ${$('metric').selectedOptions[0].text} (baseline ${pct(val(base))})`,'layer','α',{yaxis:{type:'category',title:'α'}}),cfgP);
  const kinds=[...new Set(S.map(r=>r.kind).filter(k=>k!='none'))];
- Plotly.newPlot('trade',kinds.map((k,i)=>{const rr=S.filter(r=>r.kind==k);return{mode:'markers',type:'scatter',name:k+' vector',x:rr.map(r=>base.capitulate-r.capitulate),y:rr.map(r=>r.mmlu_correct),
+ Plotly.newPlot('trade',kinds.map((k,i)=>{const rr=S.filter(r=>r.kind==k);return{mode:'markers',type:'scatter',name:k+' vector',x:rr.map(r=>(r.accept_correction-r.capitulate)-(base.accept_correction-base.capitulate)),y:rr.map(r=>r.mmlu_correct),
   text:rr.map(r=>`layer ${r.layer}, α ${r.alpha}<br>capitulate ${pct(r.capitulate)}<br>opinion syc ${pct(r.opinion_syc)}<br>accept corr ${pct(r.accept_correction)}`),hoverinfo:'text',marker:{color:PALETTE[i],size:7}}}),
-  layout('Trade-off: sycophancy reduction vs capability (each point = layer × α)','reduction in capitulation rate (abs.)','MMLU accuracy',{shapes:[{type:'line',xref:'paper',x0:0,x1:1,y0:base.mmlu_correct,y1:base.mmlu_correct,line:{dash:'dot',color:'#888'}}]}),cfgP);}
+  layout('Trade-off: discrimination gain vs capability (each point = layer × α)','gain in (accepts correct − follows wrong pushback)','MMLU accuracy',{shapes:[{type:'line',xref:'paper',x0:0,x1:1,y0:base.mmlu_correct,y1:base.mmlu_correct,line:{dash:'dot',color:'#888'}}]}),cfgP);}
 function finals(){const F=M.final;if(!F){$('finalTable').innerHTML='<tr><td class="note">pending</td></tr>';}else{
  const cols=[['capitulate','capitulation ↓'],['pushback_still_correct','still correct after pushback ↑'],['accept_correction','accepts correct correction ↑'],['plain_flip','flips under "are you sure?" ↓'],['opinion_syc','opinion sycophancy ↓'],['mmlu_correct','MMLU ↑']];
  let h='<tr><th>config</th>'+cols.map(c=>`<th>${c[1]}</th>`).join('')+'</tr>';
  for(const [k,v] of Object.entries(F))h+=`<tr><td>${k}</td>`+cols.map(c=>`<td>${pct(v[c[0]].mean)} <span class="note">[${pct(v[c[0]].lo)}, ${pct(v[c[0]].hi)}]</span></td>`).join('')+'</tr>';$('finalTable').innerHTML=h;}
  const G=M.gens;if(!G){$('genTable').innerHTML='';return}
- let h='<tr><th>config</th><th>TriviaQA acc (no hint)</th><th>acc with wrong hint</th><th>repeats wrong hint</th><th>coherence 1-5 (Gemini)</th><th>refusals</th></tr>';
+ let h='<tr><th>config</th><th>TriviaQA acc (no hint)</th><th>acc with wrong hint</th><th>repeats wrong hint</th><th>coherence 1-5 (gemini-3.5-flash)</th><th>refusals</th></tr>';
  for(const [k,s] of Object.entries(G.summary))h+=`<tr><td>${k}</td><td>${ci(s.answer_acc_plain)}</td><td>${ci(s.answer_acc_wrong_hint)}</td><td>${ci(s.says_wrong_wrong_hint)}</td><td>${s.coherence?s.coherence[0].toFixed(2)+' <span class="note">['+s.coherence[1].toFixed(2)+', '+s.coherence[2].toFixed(2)+']</span>':'–'}</td><td>${pct(s.refusal)}</td></tr>`;
  $('genTable').innerHTML=h;}
 function esc(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}

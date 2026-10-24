@@ -11,7 +11,7 @@ os.environ.setdefault("PYTORCH_MPS_HIGH_WATERMARK_RATIO", "0.35")
 os.environ.setdefault("PYTORCH_MPS_LOW_WATERMARK_RATIO", "0.3")
 import torch
 
-torch.set_num_threads(4)
+torch.set_num_threads(int(os.environ.get("THREADS", "4")))
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -44,7 +44,8 @@ def load_model(key):
     name = MODELS[key]
     tok = AutoTokenizer.from_pretrained(name)
     tok.padding_side = "left"
-    model = AutoModelForCausalLM.from_pretrained(name, dtype=torch.float16).to("mps").eval()
+    dev = os.environ.get("DEVICE", "mps")  # DEVICE=cpu runs fp32 on CPU
+    model = AutoModelForCausalLM.from_pretrained(name, dtype=torch.float16 if dev == "mps" else torch.float32).to(dev).eval()
     return tok, model
 
 
@@ -75,7 +76,7 @@ class Steer:
         if vec is None or coef == 0:
             yield
             return
-        v = (coef * vec).to(self.model.device, torch.float16)
+        v = (coef * vec).to(self.model.device, self.model.dtype)
 
         def hook(_m, _i, out):
             if isinstance(out, tuple):
