@@ -1,0 +1,11 @@
+.venv/
+data/
+*.pt
+*.npy
+*.npz
+*.safetensors
+.env
+__pycache__/
+.DS_Store
+cache/
+logs/

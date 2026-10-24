@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sycophancy Probes &amp; Steering</title>
+<meta name="description" content="Where in Qwen2.5 does 'caving to the user' live? Layer-wise linear probes and contrastive activation steering against sycophancy.">
+<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
+<style>
+:root{--bg:#fbfaf7;--fg:#1d1d1b;--muted:#6b6a64;--card:#ffffff;--line:#e4e1d8;--accent:#b4532a;--good:#2f7d4f;--bad:#b23b3b;--code:#f3f1ea}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#151514;--fg:#ecebe6;--muted:#a3a29b;--card:#1e1e1c;--line:#34332f;--accent:#e08a5e;--good:#6cc08f;--bad:#e17a7a;--code:#262623}}
+:root[data-theme="dark"]{--bg:#151514;--fg:#ecebe6;--muted:#a3a29b;--card:#1e1e1c;--line:#34332f;--accent:#e08a5e;--good:#6cc08f;--bad:#e17a7a;--code:#262623}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif}
+main{max-width:1060px;margin:0 auto;padding:32px 16px 80px}
+h1{font-size:2rem;line-height:1.2;margin:.2em 0}
+h2{margin-top:2.6em;border-top:1px solid var(--line);padding-top:1.2em}
+.sub{color:var(--muted);max-width:760px}
+a{color:var(--accent)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:24px 0}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.kpi b{display:block;font-size:1.7rem;font-variant-numeric:tabular-nums}
+.kpi span{color:var(--muted);font-size:.85rem}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin:14px 0;overflow-x:auto}
+.plot{width:100%;height:380px}
+table{border-collapse:collapse;width:100%;font-size:.88rem;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{color:var(--muted);font-weight:600}
+.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:8px 0}
+select,button{font:inherit;padding:4px 10px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
+.chat{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:720px){.chat{grid-template-columns:1fr}}
+.turn{font-size:.85rem;padding:6px 10px;border-radius:8px;margin:4px 0;white-space:pre-wrap;background:var(--code)}
+.turn.user{border-left:3px solid var(--muted)}
+.turn.asst{border-left:3px solid var(--accent)}
+.out{font-size:.88rem;padding:8px 10px;border-radius:8px;border:1px solid var(--line);white-space:pre-wrap}
+.tag{font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+code{background:var(--code);padding:1px 5px;border-radius:4px;font-size:.88em}
+.note{color:var(--muted);font-size:.88rem}
+</style>
+</head>
+<body>
+<main>
+<div class="tag">AI safety research project · mechanistic interpretability</div>
+<h1>Where does "caving to the user" live? Probing and steering sycophancy in Qwen2.5</h1>
+<p class="sub">Sycophancy, where a model tells users what they want to hear, is one of the most visible failures of RLHF-trained assistants. OpenAI <a href="https://openai.com/index/sycophancy-in-gpt-4o/">rolled back a GPT-4o update in April 2025</a> because of it. This project measures it in Qwen2.5-1.5B-Instruct (replicated on 0.5B), finds linear directions in the residual stream that predict when the model will capitulate, and tests whether subtracting a contrastive steering vector reduces sycophancy without damaging capability.</p>
+<div class="kpis" id="kpis"></div>
+<p class="note">Code, data pipeline and full write-up: <a href="https://github.com/rishikeshn-eng/sycophancy-probe-steer">github.com/rishikeshn-eng/sycophancy-probe-steer</a></p>
+
+<div class="controls">Model: <select id="model"></select></div>
+
+<h2>1 · Baseline sycophancy</h2>
+<p class="sub"><b>Opinion sycophancy</b> (Anthropic model-written-evals): the user states a view in a bio, and we check whether the model picks the matching option. <b>Pushback sycophancy</b> (TruthfulQA + are_you_sure MC): the model answers, the user pushes back and names a specific other option, and we check whether the model switches to the user's answer. When the model was right, switching is capitulation. When it was wrong and the user names the correct option, switching is healthy updating.</p>
+<div class="card"><table id="baseTable"></table></div>
+
+<h2>2 · Linear probes: can we read "will capitulate" from the residual stream?</h2>
+<p class="sub">Logistic-regression probes on every layer's residual stream, with 5 seeds (mean ± sd shaded). Three read positions: the decision token, the end of the user's pushback, and the end of the model's <i>first</i> answer, before the pushback has been seen. The last is a forward-looking signal of how firmly the model holds its answer.</p>
+<div class="card"><div id="probePush" class="plot"></div></div>
+<div class="card"><div id="probeOp" class="plot"></div></div>
+<p class="sub">Generalisation: leave-one-dataset-out (train on the other sources, test on the held-out one) and cross-kind transfer (opinion ↔ pushback).</p>
+<div class="card"><div id="probeGen" class="plot"></div></div>
+
+<h2>3 · Steering: layer × coefficient sweep</h2>
+<p class="sub">Difference-of-means vectors (CAA, Rimsky et al. 2024) are built from train-split contrast pairs and added at one layer with strength α × (mean residual norm). Negative α steers away from sycophancy. The sweep is measured on a held-out test subset.</p>
+<div class="controls">Vector: <select id="kind"></select> Metric: <select id="metric">
+<option value="capitulate">capitulation to wrong pushback</option>
+<option value="opinion_syc">opinion sycophancy</option>
+<option value="accept_correction">accepting a correct correction</option>
+<option value="mmlu_correct">MMLU accuracy</option></select></div>
+<div class="card"><div id="heat" class="plot"></div></div>
+<div class="card"><div id="trade" class="plot"></div></div>
+
+<h2>4 · Chosen configurations (full test set, 3 vector seeds, 95% bootstrap CI)</h2>
+<div class="card"><table id="finalTable"></table></div>
+<div class="card"><table id="genTable"></table></div>
+
+<h2>5 · Before / after examples</h2>
+<div class="controls">Steered config: <select id="cfg"></select> Example: <select id="ex"></select> <select id="exkind"><option value="pushback">pushback</option><option value="answer">answer (wrong hint)</option><option value="open">open-ended (coherence)</option></select></div>
+<div id="examples"></div>
+
+<h2>Method notes &amp; limitations</h2>
+<ul class="sub" id="limits">
+<li>Scores are next-token letter probabilities after a fixed assistant prefix <code>The answer is (</code>. Steering is applied at every position. During pushback evaluation the turn-1 answer is the <i>unsteered</i> model's.</li>
+<li>Small models (0.5B/1.5B) on one laptop; results may not transfer to frontier models.</li>
+<li>Opinion-sycophancy items with two options are partly confounded with letter bias. See the README for the per-letter control.</li>
+<li>meg-tong <code>feedback</code> (essay-feedback sycophancy) was not evaluated, because it needs long-form judged generations.</li>
+</ul>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const pct=x=>x==null?'–':(100*x).toFixed(1)+'%';
+const ci=a=>a?`${pct(a[0])} <span class="note">[${pct(a[1])}, ${pct(a[2])}]</span>`:'–';
+const PALETTE=['#b4532a','#2a6fb4','#2f7d4f','#8a4fb4','#b49a2a','#4fa6b4','#b42a6f','#555'];
+let D, M;
+function layout(title, x, y, extra={}){return Object.assign({title:{text:title,font:{size:14}},paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)',
+ font:{color:css('--fg'),size:11},margin:{l:50,r:10,t:40,b:40},xaxis:{title:x,gridcolor:css('--line')},yaxis:{title:y,gridcolor:css('--line')},legend:{font:{size:10}}},extra)}
+const cfgP={responsive:true,displayModeBar:false};
+fetch('data.json').then(r=>r.json()).then(d=>{D=d;const ms=Object.keys(d);$('model').innerHTML=ms.map(m=>`<option>${m}</option>`).join('');
+ $('model').onchange=render;['kind','metric'].forEach(i=>$(i).onchange=sweep);['cfg','ex','exkind'].forEach(i=>$(i).onchange=examples);render();});
+function render(){M=D[$('model').value];kpis();baseline();probes();
+ const kinds=[...new Set((M.sweep||[]).map(r=>r.kind).filter(k=>k!='none'))];$('kind').innerHTML=kinds.map(k=>`<option>${k}</option>`).join('');sweep();finals();
+ const cfgs=M.gens?Object.keys(M.gens.examples).filter(c=>!c.startsWith('none')):[];$('cfg').innerHTML=cfgs.map(c=>`<option>${c}</option>`).join('');examples();}
+function kpis(){const b=M.baseline,f=M.final;let h=`<div class="kpi"><b>${pct(b.capitulation_rate.all[0])}</b><span>capitulate when right and the user pushes back (n=${b.capitulation_rate.all[3]})</span></div>`;
+ const op=Object.values(b.opinion_syc_rate).map(x=>x[0]);h+=`<div class="kpi"><b>${pct(op.reduce((a,c)=>a+c,0)/op.length)}</b><span>mean opinion-sycophancy rate (3 MWE sets)</span></div>`;
+ if(M.probes){const c=M.probes.curves['pooled:pushback/answer_prefix'];if(c){const mx=Math.max(...c.logreg[0]);h+=`<div class="kpi"><b>${mx.toFixed(3)}</b><span>best-layer probe AUROC for "will capitulate"</span></div>`;}
+  const c2=M.probes.curves['pooled:pushback/before_pushback'];if(c2){h+=`<div class="kpi"><b>${Math.max(...c2.logreg[0]).toFixed(3)}</b><span>AUROC before the pushback is even seen</span></div>`;}}
+ if(f){const keys=Object.keys(f).filter(k=>k!='none'&&!k.startsWith('random'));if(keys.length){const k=keys[0];h+=`<div class="kpi"><b>${pct(f.none.capitulate.mean)} → ${pct(f[k].capitulate.mean)}</b><span>capitulation with steering (${k}); MMLU ${pct(f.none.mmlu_correct.mean)} → ${pct(f[k].mmlu_correct.mean)}</span></div>`;}}
+ $('kpis').innerHTML=h;}
+function baseline(){const b=M.baseline;let h='<tr><th>source</th><th>turn-1 accuracy</th><th>capitulation (was right)</th><th>accepts correction (was wrong)</th></tr>';
+ for(const s of Object.keys(b.capitulation_rate))h+=`<tr><td>${s}</td><td>${ci(b.turn1_accuracy[s])}</td><td>${ci(b.capitulation_rate[s])} <span class="note">n=${b.capitulation_rate[s][3]}</span></td><td>${ci(b.accept_correction_rate[s])} <span class="note">n=${b.accept_correction_rate[s][3]}</span></td></tr>`;
+ h+='<tr><th>opinion set</th><th colspan=3>sycophancy rate (picks user-matching answer)</th></tr>';
+ for(const [s,v] of Object.entries(b.opinion_syc_rate))h+=`<tr><td>${s}</td><td colspan=3>${ci(v)}</td></tr>`;$('baseTable').innerHTML=h;}
+function band(name,mu,sd,color,dash){const x=mu.map((_,i)=>i);return[{x,y:mu.map((m,i)=>m+sd[i]),line:{width:0},showlegend:false,hoverinfo:'skip'},
+ {x,y:mu.map((m,i)=>m-sd[i]),fill:'tonexty',fillcolor:color+'33',line:{width:0},showlegend:false,hoverinfo:'skip'},{x,y:mu,name,line:{color,dash:dash||'solid'}}]}
+function probes(){const P=M.probes;if(!P){['probePush','probeOp','probeGen'].forEach(i=>$(i).innerHTML='<p class="note">pending</p>');return}
+ const nice={answer_prefix:'decision token',end_of_pushback:'end of pushback',before_pushback:'before pushback seen',end_of_user_turn:'end of user turn'};
+ for(const [kind,div] of [['pushback','probePush'],['opinion','probeOp']]){let tr=[],i=0;
+  for(const [k,v] of Object.entries(P.curves))if(k.startsWith(`pooled:${kind}/`))tr.push(...band(nice[k.split('/')[1]],v.logreg[0],v.logreg[1],PALETTE[i++]));
+  const sh=P.controls[`${kind}/shuffled_labels`];if(sh)tr.push({y:sh.logreg[0],name:'shuffled labels',line:{color:'#888',dash:'dot'}});
+  if(kind=='pushback'){const n=tr.length?P.curves[`pooled:pushback/answer_prefix`].logreg[0].length:0;tr.push({x:[0,n-1],y:Array(2).fill(P.controls['pushback/turn1_confidence_auroc']),name:'baseline: turn-1 confidence',line:{color:'#888',dash:'dash'}})}
+  Plotly.newPlot(div,tr,layout(`${kind==='pushback'?'"Will capitulate"':'"Will agree with user"'}: in-distribution AUROC by layer`,'layer (0 = embeddings)','AUROC',{yaxis:{range:[0.4,1],title:'AUROC',gridcolor:css('--line')}}),cfgP);}
+ let tr=[],i=0;for(const [k,v] of Object.entries(P.curves))if(k.startsWith('lodo:')||k.startsWith('cross_kind:'))tr.push({y:v.logreg[0],name:k.replace('lodo:','held-out ').replace('cross_kind:',''),line:{color:PALETTE[i++%8],dash:k.startsWith('cross')?'dash':'solid'}});
+ Plotly.newPlot('probeGen',tr,layout('Held-out-dataset generalisation (decision token)','layer','AUROC',{yaxis:{range:[0.3,1],title:'AUROC',gridcolor:css('--line')}}),cfgP);}
+function sweep(){const S=M.sweep||[];if(!S.length){$('heat').innerHTML=$('trade').innerHTML='<p class="note">pending</p>';return}
+ const kind=$('kind').value,mt=$('metric').value,base=S.find(r=>r.kind=='none');const rows=S.filter(r=>r.kind==kind);
+ const L=[...new Set(rows.map(r=>r.layer))].sort((a,b)=>a-b),A=[...new Set(rows.map(r=>r.alpha))].sort((a,b)=>a-b);
+ const z=A.map(a=>L.map(l=>{const r=rows.find(r=>r.layer==l&&r.alpha==a);return r?r[mt]-base[mt]:null}));
+ Plotly.newPlot('heat',[{type:'heatmap',x:L,y:A.map(String),z,colorscale:'RdBu',zmid:0,reversescale:mt=='capitulate'||mt=='opinion_syc',colorbar:{title:'Δ vs none'}}],
+  layout(`Δ ${$('metric').selectedOptions[0].text} (baseline ${pct(base[mt])})`,'layer','α',{yaxis:{type:'category',title:'α'}}),cfgP);
+ const kinds=[...new Set(S.map(r=>r.kind).filter(k=>k!='none'))];
+ Plotly.newPlot('trade',kinds.map((k,i)=>{const rr=S.filter(r=>r.kind==k);return{mode:'markers',type:'scatter',name:k+' vector',x:rr.map(r=>base.capitulate-r.capitulate),y:rr.map(r=>r.mmlu_correct),
+  text:rr.map(r=>`layer ${r.layer}, α ${r.alpha}<br>capitulate ${pct(r.capitulate)}<br>opinion syc ${pct(r.opinion_syc)}<br>accept corr ${pct(r.accept_correction)}`),hoverinfo:'text',marker:{color:PALETTE[i],size:7}}}),
+  layout('Trade-off: sycophancy reduction vs capability (each point = layer × α)','reduction in capitulation rate (abs.)','MMLU accuracy',{shapes:[{type:'line',xref:'paper',x0:0,x1:1,y0:base.mmlu_correct,y1:base.mmlu_correct,line:{dash:'dot',color:'#888'}}]}),cfgP);}
+function finals(){const F=M.final;if(!F){$('finalTable').innerHTML='<tr><td class="note">pending</td></tr>';}else{
+ const cols=[['capitulate','capitulation ↓'],['pushback_still_correct','still correct after pushback ↑'],['accept_correction','accepts correct correction ↑'],['opinion_syc','opinion sycophancy ↓'],['mmlu_correct','MMLU ↑']];
+ let h='<tr><th>config</th>'+cols.map(c=>`<th>${c[1]}</th>`).join('')+'</tr>';
+ for(const [k,v] of Object.entries(F))h+=`<tr><td>${k}</td>`+cols.map(c=>`<td>${pct(v[c[0]].mean)} <span class="note">[${pct(v[c[0]].lo)}, ${pct(v[c[0]].hi)}]</span></td>`).join('')+'</tr>';$('finalTable').innerHTML=h;}
+ const G=M.gens;if(!G){$('genTable').innerHTML='';return}
+ let h='<tr><th>config</th><th>TriviaQA acc (no hint)</th><th>acc with wrong hint</th><th>repeats wrong hint</th><th>coherence 1-5 (Gemini)</th><th>refusals</th></tr>';
+ for(const [k,s] of Object.entries(G.summary))h+=`<tr><td>${k}</td><td>${ci(s.answer_acc_plain)}</td><td>${ci(s.answer_acc_wrong_hint)}</td><td>${ci(s.says_wrong_wrong_hint)}</td><td>${s.coherence?s.coherence[0].toFixed(2)+' <span class="note">['+s.coherence[1].toFixed(2)+', '+s.coherence[2].toFixed(2)+']</span>':'–'}</td><td>${pct(s.refusal)}</td></tr>`;
+ $('genTable').innerHTML=h;}
+function esc(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
+function examples(){const G=M.gens;if(!G||!$('cfg').value){$('examples').innerHTML='<p class="note">pending</p>';return}
+ const kind=$('exkind').value,base=G.examples['none:0:0.0'][kind],st=G.examples[$('cfg').value][kind];const n=base.length;
+ if($('ex').options.length!=n||$('ex').dataset.kind!=kind){$('ex').innerHTML=base.map((_,i)=>`<option value=${i}>#${i+1}</option>`).join('');$('ex').dataset.kind=kind}
+ const i=+$('ex').value||0,b=base[i],s=st[i];let conv='';
+ if(kind=='pushback')conv=b.prompt.map(t=>`<div class="turn ${t.role=='user'?'user':'asst'}"><span class="tag">${t.role}</span>\n${esc(t.content)}</div>`).join('');
+ else conv=`<div class="turn user"><span class="tag">user</span>\n${esc(b.prompt)}</div>`;
+ $('examples').innerHTML=`<div class="card">${conv}<div class="chat"><div><div class="tag">unsteered reply</div><div class="out">${esc(b.output)}</div></div><div><div class="tag">steered (${$('cfg').value})</div><div class="out">${esc(s.output)}</div></div></div></div>`;}
+</script>
+</body>
+</html>
