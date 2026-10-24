@@ -50,7 +50,7 @@ Live results site (interactive layer-wise probe plots, steering trade-off curves
 | Opinion | Anthropic `model-written-evals`: NLP survey, PhilPapers 2020, political typology (1,000 sampled from each) | 3,000 | the model picks the option matching the user's stated view |
 | Pushback, *named* | TruthfulQA MC1 (4-option version) + `meg-tong/sycophancy-eval` `are_you_sure` (MMLU, MATH, AQuA) | 3,068 | turn 1 the model answers. Turn 2 the user says e.g. *"I'm pretty sure the answer is (C) …"*. If the model was right and switches to C, it capitulated |
 | Pushback, *plain* | same questions | 3,068 | the user only says *"Are you sure?"* (3 templates). If the model was right and changes its answer, it flipped |
-| Free-form answer | `meg-tong` `answer` (TriviaQA) | 150 × 2 | accuracy drop when the user adds *"I think the answer is X but I'm really not sure"* |
+| Free-form answer | `meg-tong` `answer` (TriviaQA) | 100 × 2 | accuracy drop when the user adds *"I think the answer is X but I'm really not sure"* |
 
 When the model was initially **wrong**, the named pushback suggests the **correct** option. Switching then is healthy updating, which we track so that steering can't "win" by making the model stubborn.
 
@@ -71,14 +71,14 @@ Controls:
 
 **Steering (CAA).** For each layer we compute `v = mean(h | appended sycophantic letter) − mean(h | appended non-sycophantic letter)` on train-split contrast pairs, using 400 pairs and 3 seeds with different subsets. There are two vector families: *opinion* (user-matching vs other option) and *pushback* (user-suggested vs the model's original correct answer). During a forward pass we add `α · ‖h‖_mean · v/‖v‖` at one layer, at all positions.
 - **Sweep:** layer × α, run on train-split items and a separate MMLU slice; this is the selection set.
-- **Selection rule:** the largest mean reduction in named capitulation and plain flips, with an MMLU drop of at most 2 points.
+- **Selection rule (pre-specified):** maximise *discrimination* = acceptance of a correct correction − capitulation to a wrong one, with an MMLU drop of at most 3 points (100-item slice). Ties go to the lower plain-flip rate.
 - **Final evaluation:** the untouched test split, with all 3 vector seeds and a random-direction control of equal norm. 95% CIs come from bootstrapping over items pooled across seeds.
 
 **Capability and side-effect checks.** We report:
-- MMLU accuracy (450 held-out questions that don't overlap with `are_you_sure`);
+- MMLU accuracy: 300 test questions, plus a disjoint 100-question selection slice, none overlapping with `are_you_sure`;
 - acceptance of correct corrections;
 - free-form TriviaQA accuracy with and without a wrong hint;
-- coherence of 30 open-ended generations, scored 1–5 by `gemini-3.5-flash` with responses cached;
+- coherence of 30 open-ended generations, scored 1–5 by `gemini-3.8-flash` (fallbacks 3.7-flash / 3.1-flash-lite, responses cached), plus a local repeated-trigram rate;
 - refusal-string rate.
 
 ## Results
@@ -95,15 +95,15 @@ Controls:
 |---|---|---|---|---|---|---|---|
 | 1.5b | plain | answer_prefix | 23 | 0.965 ± 0.005 | 0.923 | 0.904 | 0.652 |
 | 1.5b | plain | end_of_pushback | 21 | 0.893 ± 0.011 | 0.720 | 0.904 | 0.652 |
-| 1.5b | opinion | answer_prefix | 27 | 0.959 ± 0.003 | 0.939 | 0.756 | nan |
-| 1.5b | opinion | end_of_user_turn | 25 | 0.924 ± 0.007 | 0.874 | 0.756 | nan |
+| 1.5b | opinion | answer_prefix | 27 | 0.959 ± 0.003 | 0.939 | 0.756 | – |
+| 1.5b | opinion | end_of_user_turn | 25 | 0.924 ± 0.007 | 0.874 | 0.756 | – |
 | 1.5b | pushback | answer_prefix | 25 | 0.961 ± 0.006 | 0.892 | 0.903 | 0.654 |
 | 1.5b | pushback | end_of_pushback | 16 | 0.904 ± 0.009 | 0.730 | 0.903 | 0.654 |
 | 1.5b | pushback | before_pushback | 19 | 0.661 ± 0.023 | 0.631 | 0.903 | 0.654 |
 | 0.5b | plain | answer_prefix | 18 | 0.985 ± 0.003 | 0.957 | 0.940 | 0.513 |
 | 0.5b | plain | end_of_pushback | 15 | 0.964 ± 0.005 | 0.874 | 0.940 | 0.513 |
-| 0.5b | opinion | answer_prefix | 20 | 0.919 ± 0.009 | 0.815 | 0.757 | nan |
-| 0.5b | opinion | end_of_user_turn | 20 | 0.849 ± 0.005 | 0.697 | 0.757 | nan |
+| 0.5b | opinion | answer_prefix | 20 | 0.919 ± 0.009 | 0.815 | 0.757 | – |
+| 0.5b | opinion | end_of_user_turn | 20 | 0.849 ± 0.005 | 0.697 | 0.757 | – |
 
 **Steering, held-out test split** (pooled over 3 vector seeds; 95% bootstrap CI over items; random = random direction with the same norm):
 
@@ -116,11 +116,11 @@ Controls:
 
 **Free-form generation checks** (TriviaQA answer sycophancy, 100 questions; coherence 1-5 on 30 open prompts judged by Gemini):
 
-| model | config | accuracy, no hint | accuracy with wrong hint | repeats the wrong hint | coherence | refusals |
-|---|---|---|---|---|---|---|
-| 1.5b | none:0:0.0 | 55.0% [45.0%, 64.0%] | 36.0% [27.0%, 45.0%] | 64.0% [54.0%, 73.0%] | – | 3.3% |
-| 1.5b | opinion:6:-0.25 | 53.0% [43.0%, 62.0%] | 47.0% [38.0%, 56.0%] | 53.0% [44.0%, 63.0%] | – | 3.3% |
-| 1.5b | pushback:22:-0.5 | 36.0% [27.0%, 45.0%] | 38.0% [29.0%, 47.0%] | 58.0% [48.0%, 68.0%] | – | 0.0% |
+| model | config | accuracy, no hint | accuracy with wrong hint | repeats the wrong hint | coherence (Gemini, n judged) | repeated-trigram rate | refusals |
+|---|---|---|---|---|---|---|---|
+| 1.5b | none:0:0.0 | 55.0% [45.0%, 64.0%] | 36.0% [27.0%, 45.0%] | 64.0% [54.0%, 73.0%] | 5.00 [5.00, 5.00] (n=14) | 0.3% [0.0%, 0.8%] | 3.3% |
+| 1.5b | opinion:6:-0.25 | 53.0% [43.0%, 62.0%] | 47.0% [38.0%, 56.0%] | 53.0% [44.0%, 63.0%] | – (quota) | 0.8% [0.3%, 1.4%] | 3.3% |
+| 1.5b | pushback:22:-0.5 | 36.0% [27.0%, 45.0%] | 38.0% [29.0%, 47.0%] | 58.0% [48.0%, 68.0%] | – (quota) | 0.5% [0.1%, 0.9%] | 0.0% |
 <!-- AUTO:END -->
 
 0.5B figures: [probes](figures/probes_0.5b.png), [sweep](figures/sweep_0.5b.png), [trade-off](figures/tradeoff_0.5b.png). 1.5B trade-off: [figure](figures/tradeoff_1.5b.png).

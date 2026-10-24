@@ -16,6 +16,17 @@ os.makedirs(FIG, exist_ok=True)
 plt.rcParams.update({"figure.dpi": 130, "axes.spines.top": False, "axes.spines.right": False, "font.size": 9})
 
 
+def clean(x):
+    """JSON-safe: NaN/inf -> None (browsers reject NaN in JSON)."""
+    if isinstance(x, float):
+        return x if np.isfinite(x) else None
+    if isinstance(x, dict):
+        return {k: clean(v) for k, v in x.items()}
+    if isinstance(x, (list, tuple)):
+        return [clean(v) for v in x]
+    return x
+
+
 def ms(a):
     a = np.asarray(a)
     return a.mean(0).round(4).tolist(), a.std(0).round(4).tolist()
@@ -60,6 +71,13 @@ def final(m):
     return out
 
 
+def rep3(text):
+    """Fraction of word trigrams that repeat an earlier trigram (0 = no repetition)."""
+    w = text.split()
+    tri = [tuple(w[i:i + 3]) for i in range(len(w) - 2)]
+    return 0.0 if not tri else 1 - len(set(tri)) / len(tri)
+
+
 def gens(m):
     p = os.path.join(RESULTS, m, "generations.jsonl")
     if not os.path.exists(p):
@@ -77,7 +95,9 @@ def gens(m):
         o = [r for r in rr if r["task"] == "open"]
         sc = [r.get("coherence") for r in o if r.get("coherence") is not None]
         s["coherence"] = bootstrap_ci(sc) if sc else None
+        s["n_judged"] = len(sc)
         s["refusal"] = float(np.mean([r["refusal"] for r in o]))
+        s["repeat_trigram"] = bootstrap_ci([rep3(r["output"]) for r in o])  # local degeneration proxy
         out["summary"][cfg] = s
         out["examples"][cfg] = dict(
             pushback=[dict(id=r["id"], prompt=r["prompt"], output=r["output"]) for r in rr
@@ -182,7 +202,7 @@ def main():
         if data[m]["probes"]:
             fig_probes(m, data[m]["probes"])
         fig_sweep(m, sweep)
-    json.dump(data, open(os.path.join(DOCS, "data.json"), "w"))
+    json.dump(clean(data), open(os.path.join(DOCS, "data.json"), "w"), allow_nan=False)
     print("wrote docs/data.json", {m: [k for k, v in d.items() if v] for m, d in data.items()})
 
 
@@ -245,16 +265,17 @@ def tables(data):
     out.append("")
     out.append("**Free-form generation checks** (TriviaQA answer sycophancy, 100 questions; coherence 1-5 on 30 open prompts judged by Gemini):")
     out.append("")
-    out.append("| model | config | accuracy, no hint | accuracy with wrong hint | repeats the wrong hint | coherence | refusals |")
-    out.append("|---|---|---|---|---|---|---|")
+    out.append("| model | config | accuracy, no hint | accuracy with wrong hint | repeats the wrong hint | coherence (Gemini, n judged) | repeated-trigram rate | refusals |")
+    out.append("|---|---|---|---|---|---|---|---|")
     for m, d in data.items():
         G = d.get("gens")
         if not G:
             continue
         for cfg, s in G["summary"].items():
-            coh = f"{s['coherence'][0]:.2f} [{s['coherence'][1]:.2f}, {s['coherence'][2]:.2f}]" if s["coherence"] else "–"
+            coh = (f"{s['coherence'][0]:.2f} [{s['coherence'][1]:.2f}, {s['coherence'][2]:.2f}] (n={s['n_judged']})"
+                   if s["coherence"] else "– (quota)")
             out.append(f"| {m} | {cfg} | {ci(s['answer_acc_plain'])} | {ci(s['answer_acc_wrong_hint'])} | "
-                       f"{ci(s['says_wrong_wrong_hint'])} | {coh} | {pct(s['refusal'])} |")
+                       f"{ci(s['says_wrong_wrong_hint'])} | {coh} | {ci(s['repeat_trigram'])} | {pct(s['refusal'])} |")
     return "\n".join(out)
 
 

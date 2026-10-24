@@ -111,7 +111,7 @@ def main():
         cache = os.path.join(DATA, "gemini_cache.jsonl")
         todo = [r for r in rows if r["task"] == "open"]
         # sequential cache writes keep things simple; 4 workers max per RULES
-        with ThreadPoolExecutor(4) as ex:
+        with ThreadPoolExecutor(int(os.environ.get("JUDGE_WORKERS", "4"))) as ex:
             scores = list(ex.map(lambda r: judge(r["prompt"][-1]["content"], r["output"], cache), todo))
         for r, s in zip(todo, scores):
             r["coherence"] = s

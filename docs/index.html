@@ -54,7 +54,7 @@ code{background:var(--code);padding:1px 5px;border-radius:4px;font-size:.88em}
 <div class="card"><table id="baseTable"></table></div>
 
 <h2>2 · Linear probes: can we read "will capitulate" from the residual stream?</h2>
-<p class="sub">Logistic-regression probes on every layer's residual stream, with 5 seeds (mean ± sd shaded). Three read positions: the decision token, the end of the user's pushback, and the end of the model's <i>first</i> answer, before the pushback has been seen. The last is a forward-looking signal of how firmly the model holds its answer.</p>
+<p class="sub">Logistic-regression probes on every layer's residual stream, with 5 seeds (mean ± sd shaded). <b>Read the dash-dot lines:</b> they show AUROC within groups that share the same pushback wording and original answer letter. A classifier on that metadata alone (grey long-dash) already scores about 0.90, so the high early-layer AUROC is mostly surface features. Three read positions: the decision token, the end of the user's pushback, and the end of the model's <i>first</i> answer, before the pushback has been seen. The last is a forward-looking signal of how firmly the model holds its answer.</p>
 <div class="card"><div id="probePush" class="plot"></div></div>
 <div class="card"><div id="probePlain" class="plot"></div></div>
 <div class="card"><div id="probeOp" class="plot"></div></div>
@@ -73,7 +73,7 @@ code{background:var(--code);padding:1px 5px;border-radius:4px;font-size:.88em}
 <div class="card"><div id="heat" class="plot"></div></div>
 <div class="card"><div id="trade" class="plot"></div></div>
 
-<h2>4 · Chosen configurations (full test set, 3 vector seeds, 95% bootstrap CI)</h2>
+<h2>4 · Chosen configurations (held-out test split, 3 vector seeds, 95% bootstrap CI)</h2>
 <div class="card"><table id="finalTable"></table></div>
 <div class="card"><table id="genTable"></table></div>
 
@@ -87,6 +87,8 @@ code{background:var(--code);padding:1px 5px;border-radius:4px;font-size:.88em}
 <li>Small models (0.5B/1.5B) on one laptop; results may not transfer to frontier models.</li>
 <li>Opinion-sycophancy items with two options are partly confounded with letter bias. See the README for the per-letter control.</li>
 <li>meg-tong <code>feedback</code> (essay-feedback sycophancy) was not evaluated, because it needs long-form judged generations.</li>
+<li>Time-boxed on a shared laptop GPU: the 1.5B sweep covers 5 layers × 2–3 α, final test sets have 300–400 items per metric, and the random control has 2 seeds. Gemini coherence judging was limited by API quota, so the local repeated-trigram rate is the complete degeneration check.</li>
+<li>Selection is pre-specified: maximise discrimination (accepts correct − follows wrong pushback) with an MMLU drop of at most 3 pts, chosen on train-split items and then reported on the test split.</li>
 </ul>
 </main>
 <script>
@@ -104,11 +106,15 @@ fetch('data.json').then(r=>r.json()).then(d=>{D=d;const ms=Object.keys(d);$('mod
 function render(){M=D[$('model').value];kpis();baseline();probes();
  const kinds=[...new Set((M.sweep||[]).map(r=>r.kind).filter(k=>k!='none'))];$('kind').innerHTML=kinds.map(k=>`<option>${k}</option>`).join('');sweep();finals();
  const cfgs=M.gens?Object.keys(M.gens.examples).filter(c=>!c.startsWith('none')):[];$('cfg').innerHTML=cfgs.map(c=>`<option>${c}</option>`).join('');examples();}
-function kpis(){const b=M.baseline,f=M.final;let h=`<div class="kpi"><b>${pct(b.capitulation_rate.all[0])}</b><span>capitulate when right and the user pushes back (n=${b.capitulation_rate.all[3]})</span></div>`;
- const op=Object.values(b.opinion_syc_rate).map(x=>x[0]);h+=`<div class="kpi"><b>${pct(op.reduce((a,c)=>a+c,0)/op.length)}</b><span>mean opinion-sycophancy rate (3 MWE sets)</span></div>`;
- if(M.probes){const c=M.probes.curves['pooled:pushback/answer_prefix']||M.probes.curves['pooled:plain/answer_prefix'];if(c){const mx=Math.max(...c.logreg[0]);h+=`<div class="kpi"><b>${mx.toFixed(3)}</b><span>best-layer probe AUROC for "will capitulate"</span></div>`;}
-  const c2=M.probes.curves['pooled:pushback/before_pushback'];if(c2){h+=`<div class="kpi"><b>${Math.max(...c2.logreg[0]).toFixed(3)}</b><span>AUROC before the pushback is even seen</span></div>`;}}
- if(f){const keys=Object.keys(f).filter(k=>k!='none'&&!k.startsWith('random'));if(keys.length){const k=keys[0];h+=`<div class="kpi"><b>${pct(f.none.capitulate.mean)} → ${pct(f[k].capitulate.mean)}</b><span>capitulation with steering (${k}); MMLU ${pct(f.none.mmlu_correct.mean)} → ${pct(f[k].mmlu_correct.mean)}</span></div>`;}}
+function kpis(){const b=M.baseline,f=M.final,P=M.probes;
+ const tile=(v,t)=>`<div class="kpi"><b>${v}</b><span>${t}</span></div>`;let h='';
+ h+=tile(pct(b.capitulation_rate.all[0]),`switches to the user's wrong answer when it was right (n=${b.capitulation_rate.all[3]})`);
+ h+=tile(pct(b.accept_correction_rate.all[0]),`switches to the user's correct answer when it was wrong: it barely discriminates`);
+ if(P){const c=P.curves['pooled:pushback/end_of_pushback']||P.curves['pooled:plain/end_of_pushback'];const kind=P.curves['pooled:pushback/end_of_pushback']?'pushback':'plain';
+  if(c&&c.within_strata){const ws=c.within_strata[0],i=ws.indexOf(Math.max(...ws));
+   h+=tile(ws[i].toFixed(2),`probe AUROC for "will cave", read before the reply starts, within template × letter (layer ${i}). Raw AUROC is inflated: metadata alone gives ${(+P.controls[kind+'/metadata_baseline_auroc'].reduce((a,c)=>a+c,0)/P.controls[kind+'/metadata_baseline_auroc'].length).toFixed(2)}`)}}
+ if(f){const k=Object.keys(f).find(k=>k.startsWith('pushback'));if(k){
+  h+=tile(`${pct(f.none.capitulate.mean)} → ${pct(f[k].capitulate.mean)}`,`capitulation with the best steering vector (${k}), but accepting correct corrections also fell ${pct(f.none.accept_correction.mean)} → ${pct(f[k].accept_correction.mean)}: stubborn, not discerning`);}}
  $('kpis').innerHTML=h;}
 function baseline(){const b=M.baseline;let h='<tr><th>source</th><th>turn-1 accuracy</th><th>capitulation (was right)</th><th>accepts correction (was wrong)</th><th>"are you sure?": flips when right</th><th>"are you sure?": fixes when wrong</th></tr>';
  for(const s of Object.keys(b.capitulation_rate))h+=`<tr><td>${s}</td><td>${ci(b.turn1_accuracy[s])}</td><td>${ci(b.capitulation_rate[s])} <span class="note">n=${b.capitulation_rate[s][3]}</span></td><td>${ci(b.accept_correction_rate[s])} <span class="note">n=${b.accept_correction_rate[s][3]}</span></td><td>${ci(b.plain_flip_when_right[s])}</td><td>${ci(b.plain_fix_when_wrong[s])}</td></tr>`;
@@ -119,7 +125,9 @@ function band(name,mu,sd,color,dash){const x=mu.map((_,i)=>i);return[{x,y:mu.map
 function probes(){const P=M.probes;if(!P){['probePush','probeOp','probeGen'].forEach(i=>$(i).innerHTML='<p class="note">pending</p>');return}
  const nice={answer_prefix:'decision token',end_of_pushback:'end of pushback',before_pushback:'before pushback seen',end_of_user_turn:'end of user turn'};
  for(const [kind,div] of [['pushback','probePush'],['opinion','probeOp'],['plain','probePlain']]){let tr=[],i=0;
-  for(const [k,v] of Object.entries(P.curves))if(k.startsWith(`pooled:${kind}/`))tr.push(...band(nice[k.split('/')[1]],v.logreg[0],v.logreg[1],PALETTE[i++]));
+  for(const [k,v] of Object.entries(P.curves))if(k.startsWith(`pooled:${kind}/`)){const col=PALETTE[i++];tr.push(...band(nice[k.split('/')[1]],v.logreg[0],v.logreg[1],col));
+   if(v.within_strata)tr.push({y:v.within_strata[0],name:'  ↳ within template × letter',line:{color:col,dash:'dashdot',width:1.5}})}
+  const mb=P.controls[`${kind}/metadata_baseline_auroc`];if(mb&&tr.length){const n=tr[2].y.length;tr.push({x:[0,n-1],y:Array(2).fill(mb.reduce((a,c)=>a+c,0)/mb.length),name:'metadata-only baseline',line:{color:'#999',dash:'longdash'}})}
   const sh=P.controls[`${kind}/shuffled_labels`];if(sh)tr.push({y:sh.logreg[0],name:'shuffled labels',line:{color:'#888',dash:'dot'}});
   if(P.controls[`${kind}/turn1_confidence_auroc`]!=null&&tr.length){const n=P.curves[`pooled:${kind}/answer_prefix`].logreg[0].length;tr.push({x:[0,n-1],y:Array(2).fill(P.controls[`${kind}/turn1_confidence_auroc`]),name:'baseline: turn-1 confidence',line:{color:'#888',dash:'dash'}})}
   if(!tr.length){$(div).innerHTML=`<p class="note">${kind}: too little label variance for a probe on this model</p>`;continue}
@@ -142,8 +150,8 @@ function finals(){const F=M.final;if(!F){$('finalTable').innerHTML='<tr><td clas
  let h='<tr><th>config</th>'+cols.map(c=>`<th>${c[1]}</th>`).join('')+'</tr>';
  for(const [k,v] of Object.entries(F))h+=`<tr><td>${k}</td>`+cols.map(c=>`<td>${pct(v[c[0]].mean)} <span class="note">[${pct(v[c[0]].lo)}, ${pct(v[c[0]].hi)}]</span></td>`).join('')+'</tr>';$('finalTable').innerHTML=h;}
  const G=M.gens;if(!G){$('genTable').innerHTML='';return}
- let h='<tr><th>config</th><th>TriviaQA acc (no hint)</th><th>acc with wrong hint</th><th>repeats wrong hint</th><th>coherence 1-5 (gemini-3.5-flash)</th><th>refusals</th></tr>';
- for(const [k,s] of Object.entries(G.summary))h+=`<tr><td>${k}</td><td>${ci(s.answer_acc_plain)}</td><td>${ci(s.answer_acc_wrong_hint)}</td><td>${ci(s.says_wrong_wrong_hint)}</td><td>${s.coherence?s.coherence[0].toFixed(2)+' <span class="note">['+s.coherence[1].toFixed(2)+', '+s.coherence[2].toFixed(2)+']</span>':'–'}</td><td>${pct(s.refusal)}</td></tr>`;
+ let h='<tr><th>config</th><th>TriviaQA acc (no hint)</th><th>acc with wrong hint</th><th>repeats wrong hint</th><th>coherence 1-5 (Gemini, n judged)</th><th>repeated-trigram rate</th><th>refusals</th></tr>';
+ for(const [k,s] of Object.entries(G.summary))h+=`<tr><td>${k}</td><td>${ci(s.answer_acc_plain)}</td><td>${ci(s.answer_acc_wrong_hint)}</td><td>${ci(s.says_wrong_wrong_hint)}</td><td>${s.coherence?s.coherence[0].toFixed(2)+' <span class="note">['+s.coherence[1].toFixed(2)+', '+s.coherence[2].toFixed(2)+'] n='+s.n_judged+'</span>':'– <span class="note">(API quota)</span>'}</td><td>${ci(s.repeat_trigram)}</td><td>${pct(s.refusal)}</td></tr>`;
  $('genTable').innerHTML=h;}
 function esc(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
 function examples(){const G=M.gens;if(!G||!$('cfg').value){$('examples').innerHTML='<p class="note">pending</p>';return}
