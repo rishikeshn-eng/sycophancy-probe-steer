@@ -21,6 +21,30 @@ main>.tag:first-child{color:var(--accent);font-size:12px}
 .out{font-size:14px;padding:12px;border-radius:10px;border:1px solid var(--line);white-space:pre-wrap;overflow-wrap:anywhere}
 #kpis b{font-size:clamp(26px,3vw,34px)}
 </style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;800&display=swap">
+<style id="theme">
+:root:root:root{--bg:#24102A;--surface:#321839;--surface-2:#43214D;--ink:#FFEFE6;--ink-2:#F3D3C8;--muted:#D2ACBB;--line:rgba(255,239,230,.12);--line-2:rgba(255,239,230,.24);--dye:#FF7A2F;--dye-dark:#FF7A2F;--on-dye:#24102A;--dye-soft:rgba(255,122,47,.16);--link:#FFC2D1;--blk:#FF7A2F;--blk-ink:#24102A;--c1:#FF7A2F;--c2:#FFC2D1;--c3:#7EE0C3;--c4:#FFD166;--c5:#C9A7FF;--c6:#D2ACBB;--good:#7EE0C3;--bad:#FF9A8A;--warn:#FFD166;--display:'Unbounded',system-ui,sans-serif;--h1-ls:-.03em;--plate-filter:none;--tex:radial-gradient(1100px 600px at 85% -10%,rgba(255,122,47,.32),transparent 60%),radial-gradient(800px 500px at -10% 30%,rgba(255,92,168,.18),transparent 60%);--grain:.16;--color-scheme:dark;}
+body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:var(--tex);opacity:var(--tex-o,1)}
+body::after{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");background-size:220px;opacity:var(--grain,.08);mix-blend-mode:overlay}
+.labbar{background:var(--blk);border-bottom:0;-webkit-backdrop-filter:none;backdrop-filter:none}
+.labbar .home,.labbar nav a,.labbar nav a.gh{color:var(--blk-ink)}
+.labbar nav a:hover{background:color-mix(in srgb,var(--blk-ink) 14%,transparent);color:var(--blk-ink)}
+.labbar .home i{background:var(--blk-ink);color:var(--blk)}
+h1,h2,h3,.readout,.verdict,.kpi b,.stat b,.tile .v,.stat .v{font-family:var(--display)}
+h1{font-size:clamp(38px,6.2vw,72px);line-height:1.02;letter-spacing:var(--h1-ls,-.02em);font-weight:var(--h1-w,800);max-width:18ch}
+.seal{background:var(--dye);color:var(--on-dye);border-color:var(--dye);box-shadow:6px 6px 0 var(--ink)}
+.kpis,.stats,.tiles,#headline.grid{background:var(--blk);border:0;gap:0;border-radius:var(--r);box-shadow:8px 8px 0 var(--ink)}
+.kpi,.stat,.tile,#headline .stat{background:transparent;border-left:1px solid color-mix(in srgb,var(--blk-ink) 22%,transparent)}
+.kpi b,.stat b,.tile .v,.stat .v,.kpi:first-child b,.stat:first-child b,.tile:first-child .v,#headline .stat:first-child .v{color:var(--blk-ink)}
+.kpi span,.stat span,.tile .l,.stat .k{color:color-mix(in srgb,var(--blk-ink) 85%,transparent)}
+.lab-panel{border:2px solid var(--ink);border-top:10px solid var(--dye);box-shadow:8px 8px 0 var(--ink)}
+.seg{background:color-mix(in srgb,var(--ink) 9%,transparent)}
+.seg button[aria-pressed="true"]{background:var(--dye);color:var(--on-dye);box-shadow:none}
+.track{background:color-mix(in srgb,var(--ink) 12%,transparent)}
+.card,.panel,.case,.tbl,.tablewrap,figure{border-color:color-mix(in srgb,var(--ink) 22%,transparent)}
+button.primary{box-shadow:4px 4px 0 var(--ink)}
+h1{font-size:clamp(32px,4.8vw,58px)}
+</style>
 </head>
 <body>
 <header class="labbar"><div class="labbar-in"><a class="home" href="https://claude.ai/artifact/HFzmFTYLBw6n7KTCFKAdSQ"><i>律</i>Rishikesh Nair</a><nav aria-label="Sections"><a class="ex" href="#explore">Explore</a><a href="#1-baseline-sycophancy">Baseline</a><a href="#2-linear-probes-can-we-read-will-capitul">Probes</a><a href="#3-steering-layer-coefficient-sweep">Steering</a><a href="#4-chosen-configurations-held-out-test-sp">Results</a><a href="#5-before-after-examples">Examples</a><a class="gh" href="https://github.com/rishikeshn-eng/sycophancy-probe-steer">GitHub ↗</a></nav></div></header>
