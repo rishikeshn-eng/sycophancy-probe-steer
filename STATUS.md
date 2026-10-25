@@ -1,23 +1,16 @@
-# STATUS — sycophancy-probe-steer (IN PROGRESS, not published)
+# STATUS — sycophancy-probe-steer
 
-Repo: not yet created (planned: rishikeshn-eng/sycophancy-probe-steer). Pages: not yet deployed.
-Headline result: none yet.
+- Repo: https://github.com/rishikeshn-eng/sycophancy-probe-steer (public, `main`)
+- Site: https://rishikeshn-eng.github.io/sycophancy-probe-steer/ (GitHub Pages from `main:/docs`)
 
-## Done
-- venv (.venv, uv with project-local cache), datasets in data/ (gitignored):
-  Anthropic MWE sycophancy (NLP / PhilPapers from anthropics/evals, because the HF mirror's philpapers file is a byte-copy of nlp_survey / political),
-  meg-tong are_you_sure + answer, TruthfulQA MC1, MMLU. Items: 3000 opinion, 3068 MC pushback, 600 MMLU, 300 TriviaQA.
-- Scripts in scripts/: prepare_data.py (run), run_baseline.py, probes.py, steer.py (build/sweep/final), gen_eval.py (gen/judge), make_site.py.
-- 0.5B opinion-stage baseline: syc rate nlp 0.53, political 0.53, philpapers 0.80 (results/0.5b/opinion_items.jsonl).
-- Fixed MPS memory blow-up (10 GB cache → watermark caps + empty_cache in common.py).
+## Headline result (Qwen2.5-1.5B-Instruct, held-out test split)
+- The model barely discriminates good from bad pushback. It switches to a user-suggested wrong answer 88.7% of the time when it was right, and to a user-suggested correct answer 91.9% of the time when it was wrong. 0.5B switches about 100% of the time either way.
+- "Will cave" is linearly decodable, but surface metadata alone gets AUROC 0.90. With wording held fixed, the signal emerges at layers ~16–23 (within-strata AUROC 0.89–0.92 at the decision token, 0.72–0.76 before the reply starts).
+- The best CAA steering vector (pushback, layer 22, α = −0.5) cuts capitulation from 89.5% to 79.2%, but acceptance of correct corrections falls from 94.0% to 82.8%. Discrimination is unchanged, and free-form TriviaQA accuracy drops from 55% to 36%. A random direction of equal norm reduces plain "are you sure?" flips as much as the CAA vectors do.
 
-## Running / queued
-- `scripts/chain_stage1.sh` under gpulock (nohup, log logs/stage1.log): baseline + steering-vector build for 0.5b then 1.5b.
-  It was still waiting for the GPU lock at 04:47 IST on 2026-10-24.
-
-## Left to do (in order)
-1. After stage 1: `.venv/bin/python scripts/probes.py --model 1.5b` (and 0.5b), CPU only.
-2. Steering sweep under gpulock: `./run_job.sh sweep_1.5b steer.py sweep --model 1.5b --small 150`, pick configs,
-   then `steer.py final --model 1.5b --configs "pushback:L:alpha;opinion:L:alpha"` and the same for 0.5b.
-3. `gen_eval.py gen --configs ...` (GPU), then `gen_eval.py judge` (Gemini).
-4. `make_site.py`; write docs/index.html (Plotly over docs/data.json) and README; create the GitHub repo and enable Pages.
+## Cuts / not done (also in the README Limitations)
+- Time-boxed sweep: 1.5B covers 5 layers × 2–3 α; 0.5B covers 7 layers. Final test sets have 300–400 items per metric; MMLU has 300.
+- Gemini coherence judging is incomplete because the shared API key ran out of quota (`gemini-2.5-flash` is no longer served). The local repeated-trigram rate is reported for every config.
+- Two GPU jobs hung in Metal (macOS MPS) near the deadline and were killed: the 0.5B held-out steering run (0.5B steering is reported from its selection-split sweep only) and a layer-22 random-direction control (the only random control is at layer 6).
+- Gemini coherence: only 14/90 items judged (all unsteered, all 5/5) before the shared key's quota ran out.
+- `meg-tong` `feedback` set not evaluated. No Hugging Face upload (no token).
