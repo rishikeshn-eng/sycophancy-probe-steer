@@ -6,10 +6,10 @@
 <title>Sycophancy Probes &amp; Steering</title>
 <meta name="description" content="Where in Qwen2.5 does 'caving to the user' live? Layer-wise linear probes and contrastive activation steering against sycophancy.">
 <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="lab.css">
 <style>
-:root{--fg:var(--ink);--card:var(--surface);--code:var(--surface-2);--acc:var(--link);--a2:var(--c1);--ok:var(--good);--warn:var(--accent);}
+:root{--accent:var(--dye);--accent-soft:var(--dye-soft);--fg:var(--ink);--card:var(--surface);--code:var(--surface-2);--acc:var(--link);--a2:var(--c1);--ok:var(--good);--warn:var(--accent);--dye:#B23C17;--dye-dark:#FF9A70;}
 .plot{width:100%;height:380px}
 .card{overflow-x:auto;margin:16px 0}
 .tag{border:0;padding:0;margin:0;background:none;font:500 11px/1.4 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
@@ -23,12 +23,44 @@ main>.tag:first-child{color:var(--accent);font-size:12px}
 </style>
 </head>
 <body>
-<header class="labbar"><div class="labbar-in"><a class="home" href="https://claude.ai/artifact/HFzmFTYLBw6n7KTCFKAdSQ"><i></i>Rishikesh · AI safety</a><nav aria-label="Sections"><a href="#1-baseline-sycophancy">Baseline</a><a href="#2-linear-probes-can-we-read-will-capitul">Probes</a><a href="#3-steering-layer-coefficient-sweep">Steering</a><a href="#4-chosen-configurations-held-out-test-sp">Results</a><a href="#5-before-after-examples">Examples</a><a class="gh" href="https://github.com/rishikeshn-eng/sycophancy-probe-steer">GitHub ↗</a></nav></div></header>
+<header class="labbar"><div class="labbar-in"><a class="home" href="https://claude.ai/artifact/HFzmFTYLBw6n7KTCFKAdSQ"><i>律</i>Rishikesh Nair</a><nav aria-label="Sections"><a class="ex" href="#explore">Explore</a><a href="#1-baseline-sycophancy">Baseline</a><a href="#2-linear-probes-can-we-read-will-capitul">Probes</a><a href="#3-steering-layer-coefficient-sweep">Steering</a><a href="#4-chosen-configurations-held-out-test-sp">Results</a><a href="#5-before-after-examples">Examples</a><a class="gh" href="https://github.com/rishikeshn-eng/sycophancy-probe-steer">GitHub ↗</a></nav></div></header>
 <main>
+<div class="seal" aria-hidden="true">迎<small>geigō · sycophancy</small></div>
 <div class="eyebrow">Mechanistic interpretability</div>
 <h1>Where does "caving to the user" live? Probing and steering sycophancy in Qwen2.5</h1>
 <p class="sub">Sycophancy, where a model tells users what they want to hear, is one of the most visible failures of RLHF-trained assistants. OpenAI <a href="https://openai.com/index/sycophancy-in-gpt-4o/">rolled back a GPT-4o update in April 2025</a> because of it. This project measures it in Qwen2.5-1.5B-Instruct (replicated on 0.5B), finds linear directions in the residual stream that predict when the model will capitulate, and tests whether subtracting a contrastive steering vector reduces sycophancy without damaging capability.</p>
 <div class="kpis" id="kpis"></div>
+<section class="lab-panel" id="explore" aria-labelledby="explore-h">
+  <div class="ph"><h2 id="explore-h">Turn the steering dial</h2><span class="eyebrow">Explore</span></div>
+  <p class="how">Choose a steering vector, the layer it is added at, and its strength. A good intervention lowers caving to wrong pushback while keeping acceptance of correct corrections. Ticks mark the unsteered model.</p>
+  <div class="pctl"><span class="lbl">Model</span><div class="seg" id="sm" role="group" aria-label="Model"></div><span class="lbl">Vector</span><div class="seg" id="sk" role="group" aria-label="Steering vector"></div></div>
+  <div class="pctl"><span class="lbl">Layer</span><div class="seg" id="sl" role="group" aria-label="Layer"></div><span class="lbl">Strength</span><div class="seg" id="sa" role="group" aria-label="Strength"></div></div>
+  <div class="pbody">
+    <div><p class="readout" id="sread" aria-live="polite"></p><p class="muted" id="snote"></p></div>
+    <div id="sbars"></div>
+  </div>
+</section>
+<script>
+(()=>{let D,M,model,kind,layer,alpha;const $=i=>document.getElementById(i);
+const seg=(el,items,cur,on)=>{el.innerHTML=items.map(([k,l])=>`<button type="button" data-k="${k}" aria-pressed="${String(k)===String(cur)}">${l}</button>`).join("");el.onclick=e=>{const b=e.target.closest("button");if(!b)return;el.querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",x===b));on(b.dataset.k)}};
+const pct=x=>(100*x).toFixed(0)+"%";
+const row=(lab,v,base,good)=>`<div class="mrow"><span class="lab">${lab} ${good}</span><div class="track"><div class="fill" style="width:${100*v}%"></div><div class="tick" style="left:${100*base}%" title="unsteered ${pct(base)}"></div></div><span class="val">${pct(v)}</span></div>`;
+function opts(){const S=M.sweep.filter(r=>r.kind===kind);const L=[...new Set(S.map(r=>r.layer))].sort((a,b)=>a-b);if(!L.includes(+layer))layer=L[0];
+  seg($("sl"),L.map(l=>[l,l]),layer,k=>{layer=+k;opts()});const A=[...new Set(S.filter(r=>r.layer==layer).map(r=>r.alpha))].sort((a,b)=>a-b);if(!A.includes(+alpha))alpha=A[0];
+  seg($("sa"),A.map(a=>[a,a>0?"+"+a:a]),alpha,k=>{alpha=+k;draw()});draw()}
+function draw(){const base=M.sweep.find(r=>r.kind==="none"),r=M.sweep.find(x=>x.kind===kind&&x.layer==layer&&x.alpha==alpha);if(!r)return;
+  const d0=base.accept_correction-base.capitulate,d1=r.accept_correction-r.capitulate,dc=r.capitulate-base.capitulate,da=r.accept_correction-base.accept_correction;
+  const verdict=dc<-.05&&da<-.05&&d1<=d0+.05?"stubborn: it stops caving, and stops listening":dc<-.05&&da<-.05?"caves less, but also accepts fewer real fixes":dc<-.05&&d1>d0+.05?"more discerning":dc<-.05?"caves less":Math.abs(dc)<=.05?"barely changes":"more sycophantic";
+  $("sread").innerHTML=`Caving ${pct(base.capitulate)} → <em>${pct(r.capitulate)}</em>. Verdict: <em>${verdict}</em>.`;
+  $("snote").textContent=`${kind} vector at layer ${layer}, α ${alpha}. Discrimination (accepts correct − follows wrong) ${(100*d0).toFixed(0)} → ${(100*d1).toFixed(0)} pts. Sweep items from the train split; see section 4 for held-out results.`;
+  $("sbars").innerHTML=row("Caves to wrong pushback",r.capitulate,base.capitulate,"↓")+row("Accepts a correct fix",r.accept_correction,base.accept_correction,"↑")+row("Opinion sycophancy",r.opinion_syc,base.opinion_syc,"↓")+row("MMLU accuracy",r.mmlu_correct,base.mmlu_correct,"↑")}
+function pickModel(m){model=m;M=D[m];const K=[...new Set(M.sweep.map(r=>r.kind).filter(k=>k!=="none"))];kind=K.includes(kind)?kind:K[0];
+  seg($("sk"),K.map(k=>[k,k]),kind,k=>{kind=k;opts()});opts()}
+fetch("data.json").then(r=>r.json()).then(d=>{D=d;const ms=Object.keys(d).filter(m=>d[m].sweep&&d[m].sweep.length);
+  seg($("sm"),ms.map(m=>[m,"Qwen "+m.toUpperCase()]),ms[0],pickModel);
+  const best=d[ms[0]].final&&Object.keys(d[ms[0]].final).find(k=>k.startsWith("pushback"));if(best){const [k,l,a]=best.split(":");kind=k;layer=+l;alpha=+a}pickModel(ms[0])})})();
+</script>
+
 <p class="note">Code, data pipeline and full write-up: <a href="https://github.com/rishikeshn-eng/sycophancy-probe-steer">github.com/rishikeshn-eng/sycophancy-probe-steer</a></p>
 
 <div class="controls">Model: <select id="model"></select></div>
