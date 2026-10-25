@@ -21,29 +21,36 @@ main>.tag:first-child{color:var(--accent);font-size:12px}
 .out{font-size:14px;padding:12px;border-radius:10px;border:1px solid var(--line);white-space:pre-wrap;overflow-wrap:anywhere}
 #kpis b{font-size:clamp(26px,3vw,34px)}
 </style>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style id="theme">
-:root:root:root{--bg:#24102A;--surface:#321839;--surface-2:#43214D;--ink:#FFEFE6;--ink-2:#F3D3C8;--muted:#D2ACBB;--line:rgba(255,239,230,.12);--line-2:rgba(255,239,230,.24);--dye:#FF7A2F;--dye-dark:#FF7A2F;--on-dye:#24102A;--dye-soft:rgba(255,122,47,.16);--link:#FFC2D1;--blk:#FF7A2F;--blk-ink:#24102A;--c1:#FF7A2F;--c2:#FFC2D1;--c3:#7EE0C3;--c4:#FFD166;--c5:#C9A7FF;--c6:#D2ACBB;--good:#7EE0C3;--bad:#FF9A8A;--warn:#FFD166;--display:'Unbounded',system-ui,sans-serif;--h1-ls:-.03em;--plate-filter:none;--tex:radial-gradient(1100px 600px at 85% -10%,rgba(255,122,47,.32),transparent 60%),radial-gradient(800px 500px at -10% 30%,rgba(255,92,168,.18),transparent 60%);--grain:.16;--color-scheme:dark;}
-body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:var(--tex);opacity:var(--tex-o,1)}
-body::after{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");background-size:220px;opacity:var(--grain,.08);mix-blend-mode:overlay}
-.labbar{background:var(--blk);border-bottom:0;-webkit-backdrop-filter:none;backdrop-filter:none}
-.labbar .home,.labbar nav a,.labbar nav a.gh{color:var(--blk-ink)}
-.labbar nav a:hover{background:color-mix(in srgb,var(--blk-ink) 14%,transparent);color:var(--blk-ink)}
-.labbar .home i{background:var(--blk-ink);color:var(--blk)}
-h1,h2,h3,.readout,.verdict,.kpi b,.stat b,.tile .v,.stat .v{font-family:var(--display)}
-h1{font-size:clamp(38px,6.2vw,72px);line-height:1.02;letter-spacing:var(--h1-ls,-.02em);font-weight:var(--h1-w,800);max-width:18ch}
-.seal{background:var(--dye);color:var(--on-dye);border-color:var(--dye);box-shadow:6px 6px 0 var(--ink)}
-.kpis,.stats,.tiles,#headline.grid{background:var(--blk);border:0;gap:0;border-radius:var(--r);box-shadow:8px 8px 0 var(--ink)}
-.kpi,.stat,.tile,#headline .stat{background:transparent;border-left:1px solid color-mix(in srgb,var(--blk-ink) 22%,transparent)}
-.kpi b,.stat b,.tile .v,.stat .v,.kpi:first-child b,.stat:first-child b,.tile:first-child .v,#headline .stat:first-child .v{color:var(--blk-ink)}
-.kpi span,.stat span,.tile .l,.stat .k{color:color-mix(in srgb,var(--blk-ink) 85%,transparent)}
-.lab-panel{border:2px solid var(--ink);border-top:10px solid var(--dye);box-shadow:8px 8px 0 var(--ink)}
-.seg{background:color-mix(in srgb,var(--ink) 9%,transparent)}
+:root:root:root{--bg:#FFF3F0;--surface:#FFFFFF;--surface-2:#FFDDD7;--ink:#1C1B22;--ink-2:#3E3D49;--muted:#5D5C6B;--line:rgba(28,27,34,.12);--line-2:rgba(28,27,34,.22);--dye:#96372F;--dye-dark:#96372F;--on-dye:#FFFFFF;--link:#96372F;--fill:#EB8376;--deep:#3F1915;--glow:#FFA89C;--tint:#FFDDD7;--tex:radial-gradient(circle at 50% 50%,transparent 9px,#EB837633 9px,#EB837633 10px,transparent 10px) 0 0/28px 28px;--plate-filter:none;--color-scheme:light;--display:'Bricolage Grotesque',system-ui,sans-serif;--c1:#96372F;--c2:#96372F;--c3:#006E30;--c4:#844C00;--c5:#6C4494;--c6:#5D5C6B}
+@media (prefers-color-scheme:dark){:root:root:root:not([data-theme=light]){--bg:#3F1915;--surface:#542620;--surface-2:color-mix(in srgb,#542620 70%,#FFA89C 12%);--ink:#F4F2F7;--ink-2:#DAD7E3;--muted:#BDBACB;--line:rgba(244,242,247,.12);--line-2:rgba(244,242,247,.24);--dye:#FFA89C;--dye-dark:#FFA89C;--on-dye:#3F1915;--link:#FFA89C;--tint:#542620;--tex:radial-gradient(circle at 50% 50%,transparent 9px,#FFA89C1F 9px,#FFA89C1F 10px,transparent 10px) 0 0/28px 28px;--plate-filter:brightness(.92);--color-scheme:dark;--c1:#FFA89C;--c2:#FFA89C;--c3:#8FD89E;--c4:#EEBA70;--c5:#D5B2FE;--c6:#BDBACB}}
+:root:root:root[data-theme=dark]{--bg:#3F1915;--surface:#542620;--surface-2:color-mix(in srgb,#542620 70%,#FFA89C 12%);--ink:#F4F2F7;--ink-2:#DAD7E3;--muted:#BDBACB;--line:rgba(244,242,247,.12);--line-2:rgba(244,242,247,.24);--dye:#FFA89C;--dye-dark:#FFA89C;--on-dye:#3F1915;--link:#FFA89C;--tint:#542620;--tex:radial-gradient(circle at 50% 50%,transparent 9px,#FFA89C1F 9px,#FFA89C1F 10px,transparent 10px) 0 0/28px 28px;--plate-filter:brightness(.92);--color-scheme:dark;}
+body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:var(--tex);-webkit-mask-image:linear-gradient(180deg,#000,transparent 70%);mask-image:linear-gradient(180deg,#000,transparent 70%)}
+@media (prefers-reduced-motion:no-preference){body::before{animation:drift 90s linear infinite}@keyframes drift{to{background-position:240px 120px,120px 240px}}}
+.labbar{background:var(--deep);border-bottom:0}
+.labbar .home,.labbar nav a,.labbar nav a.gh{color:#fff}
+.labbar nav a:hover{background:rgba(255,255,255,.12);color:#fff}
+.labbar .home i{background:var(--fill);color:var(--deep)}
+h1,h2,h3,.readout,.verdict,.kpi b,.stat b,.tile .v,.stat .v,.lab-panel .ph h2{font-family:var(--display);letter-spacing:-.025em}
+h1{font-size:clamp(36px,5.6vw,64px);line-height:1.05;font-weight:800;max-width:19ch}
+h2{font-weight:800}
+.eyebrow{color:var(--dye)}
+.seal{background:var(--fill);color:var(--deep);border:0;border-radius:22px;box-shadow:0 24px 50px -24px var(--deep);font-family:"Shippori Mincho B1",serif}
+.seal small{color:var(--muted)}
+.plain{display:grid;grid-template-columns:auto 1fr;gap:14px 18px;align-items:start;margin:22px 0 8px;max-width:760px;background:var(--tint);border-radius:18px;padding:18px 22px}
+.plain b{font:600 11px/1.6 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--dye);white-space:nowrap;padding-top:3px}
+.plain p{margin:0;font-size:18px;line-height:1.55;color:var(--ink)}
+@media (max-width:600px){.plain{grid-template-columns:1fr}}
+.kpis,.stats,.tiles,#headline.grid{background:var(--deep);border:0;gap:0;border-radius:20px;box-shadow:0 30px 60px -36px var(--deep)}
+.kpi,.stat,.tile,#headline .stat{background:transparent;border-left:1px solid rgba(255,255,255,.12)}
+.kpi b,.stat b,.tile .v,.stat .v{color:#fff}
+.kpi:first-child b,.stat:first-child b,.tile:first-child .v,#headline .stat:first-child .v{color:var(--glow)}
+.kpi span,.stat span,.tile .l,.stat .k{color:rgba(255,255,255,.82)}
+.lab-panel{border:0;border-top:6px solid var(--fill);border-radius:20px;box-shadow:0 30px 60px -40px var(--deep)}
 .seg button[aria-pressed="true"]{background:var(--dye);color:var(--on-dye);box-shadow:none}
-.track{background:color-mix(in srgb,var(--ink) 12%,transparent)}
-.card,.panel,.case,.tbl,.tablewrap,figure{border-color:color-mix(in srgb,var(--ink) 22%,transparent)}
-button.primary{box-shadow:4px 4px 0 var(--ink)}
-h1{font-size:clamp(32px,4.8vw,58px)}
+.card,.panel,.case,figure,.tbl,.tablewrap{border-radius:16px}
+button.primary{background:var(--dye);border-color:var(--dye);color:var(--on-dye)}
 </style>
 </head>
 <body>
@@ -53,6 +60,7 @@ h1{font-size:clamp(32px,4.8vw,58px)}
 <div class="eyebrow">Mechanistic interpretability</div>
 <h1>Where does "caving to the user" live? Probing and steering sycophancy in Qwen2.5</h1>
 <p class="sub">Sycophancy, where a model tells users what they want to hear, is one of the most visible failures of RLHF-trained assistants. OpenAI <a href="https://openai.com/index/sycophancy-in-gpt-4o/">rolled back a GPT-4o update in April 2025</a> because of it. This project measures it in Qwen2.5-1.5B-Instruct (replicated on 0.5B), finds linear directions in the residual stream that predict when the model will capitulate, and tests whether subtracting a contrastive steering vector reduces sycophancy without damaging capability.</p>
+<aside class="plain"><b>In plain words</b><p>Ask a good friend “are you sure?” and they check their answer. Ask this model and it simply agrees with you, even when it was right the first time.</p></aside>
 <div class="kpis" id="kpis"></div>
 <section class="lab-panel" id="explore" aria-labelledby="explore-h">
   <div class="ph"><h2 id="explore-h">Turn the steering dial</h2><span class="eyebrow">Explore</span></div>
