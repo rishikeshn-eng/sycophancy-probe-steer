@@ -6,42 +6,26 @@
 <title>Sycophancy Probes &amp; Steering</title>
 <meta name="description" content="Where in Qwen2.5 does 'caving to the user' live? Layer-wise linear probes and contrastive activation steering against sycophancy.">
 <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="lab.css">
 <style>
-:root{--bg:#fbfaf7;--fg:#1d1d1b;--muted:#6b6a64;--card:#ffffff;--line:#e4e1d8;--accent:#b4532a;--good:#2f7d4f;--bad:#b23b3b;--code:#f3f1ea}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#151514;--fg:#ecebe6;--muted:#a3a29b;--card:#1e1e1c;--line:#34332f;--accent:#e08a5e;--good:#6cc08f;--bad:#e17a7a;--code:#262623}}
-:root[data-theme="dark"]{--bg:#151514;--fg:#ecebe6;--muted:#a3a29b;--card:#1e1e1c;--line:#34332f;--accent:#e08a5e;--good:#6cc08f;--bad:#e17a7a;--code:#262623}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif}
-main{max-width:1060px;margin:0 auto;padding:32px 16px 80px}
-h1{font-size:2rem;line-height:1.2;margin:.2em 0}
-h2{margin-top:2.6em;border-top:1px solid var(--line);padding-top:1.2em}
-.sub{color:var(--muted);max-width:760px}
-a{color:var(--accent)}
-.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:24px 0}
-.kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
-.kpi b{display:block;font-size:1.7rem;font-variant-numeric:tabular-nums}
-.kpi span{color:var(--muted);font-size:.85rem}
-.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin:14px 0;overflow-x:auto}
+:root{--fg:var(--ink);--card:var(--surface);--code:var(--surface-2);--acc:var(--link);--a2:var(--c1);--ok:var(--good);--warn:var(--accent);}
 .plot{width:100%;height:380px}
-table{border-collapse:collapse;width:100%;font-size:.88rem;font-variant-numeric:tabular-nums}
-th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
-th{color:var(--muted);font-weight:600}
-.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:8px 0}
-select,button{font:inherit;padding:4px 10px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
-.chat{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.card{overflow-x:auto;margin:16px 0}
+.tag{border:0;padding:0;margin:0;background:none;font:500 11px/1.4 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+main>.tag:first-child{color:var(--accent);font-size:12px}
+.chat{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
 @media (max-width:720px){.chat{grid-template-columns:1fr}}
-.turn{font-size:.85rem;padding:6px 10px;border-radius:8px;margin:4px 0;white-space:pre-wrap;background:var(--code)}
-.turn.user{border-left:3px solid var(--muted)}
-.turn.asst{border-left:3px solid var(--accent)}
-.out{font-size:.88rem;padding:8px 10px;border-radius:8px;border:1px solid var(--line);white-space:pre-wrap}
-.tag{font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
-code{background:var(--code);padding:1px 5px;border-radius:4px;font-size:.88em}
-.note{color:var(--muted);font-size:.88rem}
+.turn{font-size:14px;padding:10px 12px;border-radius:10px;margin:6px 0;white-space:pre-wrap;background:var(--surface-2);overflow-wrap:anywhere}
+.turn.user{border-left:3px solid var(--muted)}.turn.asst{border-left:3px solid var(--accent)}
+.out{font-size:14px;padding:12px;border-radius:10px;border:1px solid var(--line);white-space:pre-wrap;overflow-wrap:anywhere}
+#kpis b{font-size:clamp(26px,3vw,34px)}
 </style>
 </head>
 <body>
+<header class="labbar"><div class="labbar-in"><a class="home" href="https://claude.ai/artifact/HFzmFTYLBw6n7KTCFKAdSQ"><i></i>Rishikesh · AI safety</a><nav aria-label="Sections"><a href="#1-baseline-sycophancy">Baseline</a><a href="#2-linear-probes-can-we-read-will-capitul">Probes</a><a href="#3-steering-layer-coefficient-sweep">Steering</a><a href="#4-chosen-configurations-held-out-test-sp">Results</a><a href="#5-before-after-examples">Examples</a><a class="gh" href="https://github.com/rishikeshn-eng/sycophancy-probe-steer">GitHub ↗</a></nav></div></header>
 <main>
-<div class="tag">AI safety research project · mechanistic interpretability</div>
+<div class="eyebrow">Mechanistic interpretability</div>
 <h1>Where does "caving to the user" live? Probing and steering sycophancy in Qwen2.5</h1>
 <p class="sub">Sycophancy, where a model tells users what they want to hear, is one of the most visible failures of RLHF-trained assistants. OpenAI <a href="https://openai.com/index/sycophancy-in-gpt-4o/">rolled back a GPT-4o update in April 2025</a> because of it. This project measures it in Qwen2.5-1.5B-Instruct (replicated on 0.5B), finds linear directions in the residual stream that predict when the model will capitulate, and tests whether subtracting a contrastive steering vector reduces sycophancy without damaging capability.</p>
 <div class="kpis" id="kpis"></div>
@@ -49,11 +33,11 @@ code{background:var(--code);padding:1px 5px;border-radius:4px;font-size:.88em}
 
 <div class="controls">Model: <select id="model"></select></div>
 
-<h2>1 · Baseline sycophancy</h2>
+<h2 id="1-baseline-sycophancy">1 · Baseline sycophancy</h2>
 <p class="sub"><b>Opinion sycophancy</b> (Anthropic model-written-evals): the user states a view in a bio, and we check whether the model picks the matching option. <b>Pushback sycophancy</b> (TruthfulQA + are_you_sure MC): the model answers, the user pushes back and names a specific other option, and we check whether the model switches to the user's answer. When the model was right, switching is capitulation. When it was wrong and the user names the correct option, switching is healthy updating. <b>Plain "are you sure?"</b> follows the meg-tong protocol: the user only expresses doubt and names no alternative.</p>
 <div class="card"><table id="baseTable"></table></div>
 
-<h2>2 · Linear probes: can we read "will capitulate" from the residual stream?</h2>
+<h2 id="2-linear-probes-can-we-read-will-capitul">2 · Linear probes: can we read "will capitulate" from the residual stream?</h2>
 <p class="sub">Logistic-regression probes on every layer's residual stream, with 5 seeds (mean ± sd shaded). <b>Read the dash-dot lines:</b> they show AUROC within groups that share the same pushback wording and original answer letter. A classifier on that metadata alone (grey long-dash) already scores about 0.90, so the high early-layer AUROC is mostly surface features. Three read positions: the decision token, the end of the user's pushback, and the end of the model's <i>first</i> answer, before the pushback has been seen. The last is a forward-looking signal of how firmly the model holds its answer.</p>
 <div class="card"><div id="probePush" class="plot"></div></div>
 <div class="card"><div id="probePlain" class="plot"></div></div>
@@ -61,7 +45,7 @@ code{background:var(--code);padding:1px 5px;border-radius:4px;font-size:.88em}
 <p class="sub">Generalisation: leave-one-dataset-out (train on the other sources, test on the held-out one) and cross-kind transfer (opinion ↔ pushback).</p>
 <div class="card"><div id="probeGen" class="plot"></div></div>
 
-<h2>3 · Steering: layer × coefficient sweep</h2>
+<h2 id="3-steering-layer-coefficient-sweep">3 · Steering: layer × coefficient sweep</h2>
 <p class="sub">Difference-of-means vectors (CAA, Rimsky et al. 2024) are built from train-split contrast pairs and added at one layer with strength α × (mean residual norm). Negative α steers away from sycophancy. The sweep runs on <i>train-split</i> items and a separate MMLU slice; the chosen configs are then evaluated on the untouched test split (section 4). <b>Discrimination</b> is acceptance of a correct correction minus capitulation to a wrong one. An unsteered model that simply defers to the user scores about 0, and a stubborn model also scores about 0.</p>
 <div class="controls">Vector: <select id="kind"></select> Metric: <select id="metric">
 <option value="discrimination">discrimination: accepts correct − follows wrong pushback</option>
@@ -73,15 +57,15 @@ code{background:var(--code);padding:1px 5px;border-radius:4px;font-size:.88em}
 <div class="card"><div id="heat" class="plot"></div></div>
 <div class="card"><div id="trade" class="plot"></div></div>
 
-<h2>4 · Chosen configurations (held-out test split, 3 vector seeds, 95% bootstrap CI)</h2>
+<h2 id="4-chosen-configurations-held-out-test-sp">4 · Chosen configurations (held-out test split, 3 vector seeds, 95% bootstrap CI)</h2>
 <div class="card"><table id="finalTable"></table></div>
 <div class="card"><table id="genTable"></table></div>
 
-<h2>5 · Before / after examples</h2>
+<h2 id="5-before-after-examples">5 · Before / after examples</h2>
 <div class="controls">Steered config: <select id="cfg"></select> Example: <select id="ex"></select> <select id="exkind"><option value="pushback">pushback</option><option value="answer">answer (wrong hint)</option><option value="open">open-ended (coherence)</option></select></div>
 <div id="examples"></div>
 
-<h2>Method notes &amp; limitations</h2>
+<h2 id="method-notes-amp-limitations">Method notes &amp; limitations</h2>
 <ul class="sub" id="limits">
 <li>Scores are next-token letter probabilities after a fixed assistant prefix <code>The answer is (</code>. Steering is applied at every position. During pushback evaluation the turn-1 answer is the <i>unsteered</i> model's.</li>
 <li>Small models (0.5B/1.5B) on one laptop; results may not transfer to frontier models.</li>
@@ -96,7 +80,7 @@ const $=id=>document.getElementById(id);
 const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const pct=x=>x==null?'–':(100*x).toFixed(1)+'%';
 const ci=a=>a?`${pct(a[0])} <span class="note">[${pct(a[1])}, ${pct(a[2])}]</span>`:'–';
-const PALETTE=['#b4532a','#2a6fb4','#2f7d4f','#8a4fb4','#b49a2a','#4fa6b4','#b42a6f','#555'];
+const PALETTE=['--c1','--c2','--c3','--c4','--c5','--c6','--accent','--muted'].map(v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim()).map(c=>/^#[0-9a-f]{6}$/i.test(c)?c:'#888888');
 let D, M;
 function layout(title, x, y, extra={}){return Object.assign({title:{text:title,font:{size:14}},paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)',
  font:{color:css('--fg'),size:11},margin:{l:50,r:10,t:40,b:40},xaxis:{title:x,gridcolor:css('--line')},yaxis:{title:y,gridcolor:css('--line')},legend:{font:{size:10}}},extra)}
